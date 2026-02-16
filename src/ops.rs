@@ -47,7 +47,7 @@ impl Ops {
         self.stream
             .write_fmt(format_args!("-WRONGTYPE {}\r\n", message))
     }
-    
+
     pub fn unwrap_stream(self) -> TcpStream {
         self.stream
     }

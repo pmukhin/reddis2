@@ -6,16 +6,14 @@ mod ops;
 use crate::cmd::Command;
 use anyhow::Context;
 use bytes::Bytes;
-use mio::net::{TcpListener, TcpStream};
-use mio::{Events, Interest, Poll, Token};
-use std::collections::{BTreeMap, HashMap, LinkedList};
-use std::fmt::format;
-use std::io::{Read, Write};
-use std::ops::{Add, AddAssign};
-use std::time::{Duration, Instant};
 use itertools::Itertools;
-use tracing::{error, info};
-use crate::err::RedisError;
+use mio::net::TcpListener;
+use mio::{Events, Interest, Poll, Token};
+use nom::combinator::value;
+use std::collections::{BTreeMap, HashMap, LinkedList};
+use std::io::Read;
+use std::time::Instant;
+use tracing::info;
 
 const SERVER: Token = Token(0);
 
@@ -35,7 +33,7 @@ fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let mut hmap: HashMap<Bytes, StoredValue> = HashMap::default();
-    let mut ttl_map: BTreeMap<Instant, Bytes> = BTreeMap::default();
+    let _ttl_map: BTreeMap<Instant, Bytes> = BTreeMap::default();
 
     let addr = "127.0.0.1:6379".parse()?;
     let mut listener = TcpListener::bind(addr)?;
@@ -121,7 +119,7 @@ fn main() -> anyhow::Result<()> {
                                                 client.ops.write_bulk_string(bytes)?;
                                                 info!(
                                                     "[{token:?}] GET executed successfully with key {}",
-                                                    String::from_utf8_lossy(&key)
+                                                    String::from_utf8_lossy(key)
                                                 );
                                             }
                                             Some(value) => {
@@ -214,7 +212,7 @@ fn main() -> anyhow::Result<()> {
                                                         l.push_front(Bytes::from(value));
                                                     }
                                                     client.ops.write_bulk_string(
-                                                        &values_len.to_string(),
+                                                        values_len.to_string(),
                                                     )?;
                                                 }
                                                 _ => client.ops.wrong_type("expected LIST")?,
@@ -232,7 +230,7 @@ fn main() -> anyhow::Result<()> {
                                                             value.to_vec().into_boxed_slice();
                                                         l.push_back(Bytes::from(value));
                                                     }
-                                                    client.ops.write_bulk_string(&Bytes::from(
+                                                    client.ops.write_bulk_string(Bytes::from(
                                                         values_len.to_string(),
                                                     ))?;
                                                 }
@@ -354,10 +352,10 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         Ok(Command::Ttl(key)) => match hmap.get(key) {
                                             None => client.ops.key_not_found()?,
-                                            Some(StoredValue::TtlPlain(bytes, i)) => {
+                                            Some(StoredValue::TtlPlain(_bytes, i)) => {
                                                 let now = Instant::now();
                                                 let diff = i.duration_since(now).as_secs();
-                                                client.ops.write_bulk_string(&diff.to_string())?;
+                                                client.ops.write_bulk_string(diff.to_string())?;
                                             }
                                             _ => client
                                                 .ops
@@ -388,7 +386,7 @@ fn main() -> anyhow::Result<()> {
                                             Some(StoredValue::List(ll)) => {
                                                 client
                                                     .ops
-                                                    .write_bulk_string(&ll.len().to_string())?;
+                                                    .write_bulk_string(ll.len().to_string())?;
                                             }
                                             _ => client
                                                 .ops
@@ -399,47 +397,96 @@ fn main() -> anyhow::Result<()> {
                                             Some(StoredValue::Dict(dict)) => {
                                                 match dict.get(field) {
                                                     None => client.ops.key_not_found()?,
-                                                    Some(value) => client.ops.write_bulk_string(value)?,
+                                                    Some(value) => {
+                                                        client.ops.write_bulk_string(value)?
+                                                    }
                                                 }
                                             }
-                                            _ => client.ops.wrong_type("stored value isn't a dict")?,
-                                        }
-                                        Ok(Command::Hset(key, field, value)) =>  match hmap.get_mut(key) {
-                                            None => client.ops.key_not_found()?,
-                                            Some(StoredValue::Dict(dict)) => {
-                                                dict.insert(Bytes::copy_from_slice(field), Bytes::copy_from_slice(value));
-                                            }
-                                            _ => client.ops.wrong_type("stored value isn't a dict")?,
+                                            _ => client
+                                                .ops
+                                                .wrong_type("stored value isn't a dict")?,
                                         },
-                                        Ok(Command::HMget(key, fields)) =>  match hmap.get(key) {
+                                        Ok(Command::Hset(key, field, value)) => {
+                                            match hmap.get_mut(key) {
+                                                None => {
+                                                    let mut dict = HashMap::new();
+                                                    dict.insert(
+                                                        Bytes::copy_from_slice(field),
+                                                        Bytes::copy_from_slice(value),
+                                                    );
+                                                    hmap.insert(
+                                                        Bytes::copy_from_slice(key),
+                                                        StoredValue::Dict(dict),
+                                                    );
+                                                    client.ops.ok()?;
+                                                }
+                                                Some(StoredValue::Dict(dict)) => {
+                                                    dict.insert(
+                                                        Bytes::copy_from_slice(field),
+                                                        Bytes::copy_from_slice(value),
+                                                    );
+                                                    client.ops.ok()?;
+                                                }
+                                                _ => client
+                                                    .ops
+                                                    .wrong_type("stored value isn't a dict")?,
+                                            }
+                                        }
+                                        Ok(Command::HMget(key, fields)) => match hmap.get(key) {
                                             None => client.ops.key_not_found()?,
                                             Some(StoredValue::Dict(dict)) => {
-                                               let result = fields.iter().map(|f|dict.get(*f)).flatten().collect::<Vec<_>>();
+                                                let result = fields
+                                                    .iter()
+                                                    .filter_map(|f| dict.get(*f))
+                                                    .collect::<Vec<_>>();
                                                 client.ops.write_array(result.as_slice())?;
                                             }
-                                            _ => client.ops.wrong_type("stored value isn't a dict")?,
-                                        }
-                                        Ok(Command::HMset(key, fields_and_values)) => match hmap.get_mut(key) {
-                                            None => client.ops.key_not_found()?,
-                                            Some(StoredValue::Dict(dict)) => {
-                                                for mut chunk in &fields_and_values.iter().chunks(2) {
-                                                    let field = chunk.next().expect("HMSET is ill-formed");
-                                                    let value = chunk.next().expect("HMSET is ill-formed");
-                                                    dict.insert(Bytes::copy_from_slice(field), Bytes::copy_from_slice(value));
-                                                }
-                                            }
-                                            _ => client.ops.wrong_type("stored value isn't a dict")?,
+                                            _ => client
+                                                .ops
+                                                .wrong_type("stored value isn't a dict")?,
                                         },
+                                        Ok(Command::HMset(key, fields_and_values)) => {
+                                            let stored_value = hmap
+                                                .entry(Bytes::copy_from_slice(key))
+                                                .or_insert(StoredValue::Dict(Default::default()));
+                                            match stored_value {
+                                                StoredValue::Dict(dict) => {
+                                                    for mut chunk in
+                                                        &fields_and_values.iter().chunks(2)
+                                                    {
+                                                        let field = chunk
+                                                            .next()
+                                                            .expect("HMSET is ill-formed");
+                                                        let value = chunk
+                                                            .next()
+                                                            .expect("HMSET is ill-formed");
+                                                        dict.insert(
+                                                            Bytes::copy_from_slice(field),
+                                                            Bytes::copy_from_slice(value),
+                                                        );
+                                                    }
+                                                    client.ops.ok()?;
+                                                }
+                                                _ => client
+                                                    .ops
+                                                    .wrong_type("stored value isn't a dict")?,
+                                            }
+                                        }
                                         Ok(Command::HgetAll(key)) => match hmap.get(key) {
                                             None => client.ops.key_not_found()?,
                                             Some(StoredValue::Dict(dict)) => {
-                                                let fields_and_values = dict.iter()
+                                                let fields_and_values = dict
+                                                    .iter()
                                                     .flat_map(|(k, v)| [k, v])
                                                     .collect::<Vec<_>>();
-                                                client.ops.write_array(fields_and_values.as_slice())?;
+                                                client
+                                                    .ops
+                                                    .write_array(fields_and_values.as_slice())?;
                                             }
-                                            _ => client.ops.wrong_type("stored value isn't a dict")?,
-                                        }
+                                            _ => client
+                                                .ops
+                                                .wrong_type("stored value isn't a dict")?,
+                                        },
                                     }
                                     total_read.clear();
                                     info!("[{token:?}] command is executed, buffer cleared");
@@ -469,12 +516,10 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
 
-                    if closed {
-                        if let Some(client) = clients.remove(&token) {
-                            poll.registry()
-                                .deregister(&mut client.ops.unwrap_stream())?;
-                            println!("[{token:?}] Disconnected");
-                        }
+                    if closed && let Some(client) = clients.remove(&token) {
+                        poll.registry()
+                            .deregister(&mut client.ops.unwrap_stream())?;
+                        println!("[{token:?}] Disconnected");
                     }
                 }
             }

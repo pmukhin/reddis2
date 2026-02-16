@@ -4,10 +4,10 @@ use crate::err::RedisError;
 use crate::cmd::Info::{LibName, LibVersion};
 use nom::{
     Err, IResult,
-    bytes::complete::{tag, tag_no_case, take_while},
+    bytes::complete::{tag, take_while},
     character::complete::digit0,
-    combinator::{map, opt},
-    error::{ContextError, ErrorKind, ParseError},
+    combinator::opt,
+    error::{ErrorKind, ParseError},
     multi::separated_list0,
 };
 use std::fmt::Debug;
@@ -47,7 +47,7 @@ enum CmdCode {
 
 fn value_len(i: &[u8]) -> IResult<&[u8], usize, ParseFailure> {
     let (i, _) = tag("$")(i)?;
-    let (i, _u) = take_while(|c: u8| c >= 48 && c <= 57)(i)?;
+    let (i, _u) = take_while(|c: u8| (48..=57).contains(&c))(i)?;
     let (i, _) = tag("\r\n")(i)?;
     Ok((
         i,
@@ -144,7 +144,7 @@ where
 
 fn cmd_len(i: &[u8]) -> IResult<&[u8], usize, ParseFailure> {
     let (i, _) = tag([b'*'])(i)?;
-    let (i, _u) = take_while(|c: u8| c >= 48 && c <= 57)(i)?;
+    let (i, _u) = take_while(|c: u8| (48..=57).contains(&c))(i)?;
     let (i, _) = tag("\r\n")(i)?;
     Ok((
         i,
@@ -291,7 +291,7 @@ impl fmt::Display for ParseFailure {
     }
 }
 
-pub fn parse(i: &[u8]) -> Result<Command, RedisError> {
+pub fn parse(i: &[u8]) -> Result<Command<'_>, RedisError> {
     let (_, cmd) = root(i)?;
     Ok(cmd)
 }

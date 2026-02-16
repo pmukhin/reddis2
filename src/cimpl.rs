@@ -32,7 +32,7 @@ pub fn insert(
 ) {
     let value = Bytes::copy_from_slice(value);
     hm.insert(
-        Bytes::from(Bytes::copy_from_slice(key)),
+        Bytes::copy_from_slice(key),
         match will_live_until {
             None => StoredValue::Plain(value),
             Some(instant) => StoredValue::TtlPlain(value, instant),
@@ -58,7 +58,7 @@ pub fn pop<A: StartFrom<Bytes>>(ll: &mut LinkedList<Bytes>, maybe_count: Option<
     }
     if is_multi_count {
         Pop::Multiple(to_ret)
-    } else if to_ret.len() > 0 {
+    } else if !to_ret.is_empty() {
         Pop::Single(to_ret[0].clone())
     } else {
         Pop::None
