@@ -191,13 +191,13 @@ fn main() -> anyhow::Result<()> {
                                     todo!("not implemented: Command::Config")
                                 }
                                 Command::Lpush(key, values) => match hmap.append(key, values) {
-                                    Err(_) => client.ops.wrong_type("expected LIST")?,
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(values_len) => {
                                         client.ops.write_bulk_string(values_len.to_string())?
                                     }
                                 },
                                 Command::Rpush(key, values) => match hmap.prepend(key, values) {
-                                    Err(_) => client.ops.wrong_type("expected LIST")?,
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(values_len) => {
                                         client.ops.write_bulk_string(values_len.to_string())?
                                     }
