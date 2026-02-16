@@ -8,15 +8,11 @@ pub enum RedisError {
     IncompleteInput,
     Parse(String),
     IO(String),
-    Type,
 }
 
 impl fmt::Display for RedisError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RedisError::Type => {
-                write!(f, "Operation against a key holding the wrong kind of value")
-            }
             RedisError::Parse(message) => write!(f, "{message}"),
             RedisError::IncompleteInput => write!(f, "incomplete input"),
             RedisError::IO(message) => write!(f, "{message}"),

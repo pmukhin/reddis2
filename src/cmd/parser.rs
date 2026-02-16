@@ -45,17 +45,7 @@ enum CmdCode {
     HgetAll,
 }
 
-fn value_len(i: &[u8]) -> IResult<&[u8], usize, ParseFailure> {
-    let (i, _) = tag("$")(i)?;
-    let (i, _u) = take_while(|c: u8| (48..=57).contains(&c))(i)?;
-    let (i, _) = tag("\r\n")(i)?;
-    Ok((
-        i,
-        usize::from_str(str::from_utf8(_u).expect("invalid number")).expect("invalid number"),
-    ))
-}
-
-fn cmd<'a>(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
+fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
     let (i, cmd_str) = string(i)?;
     let v = match cmd_str {
         b"PING" => CmdCode::Ping,
@@ -208,7 +198,7 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         CmdCode::RpushX => push(i, Command::RpushX),
         CmdCode::Lpop => pop(i, Command::Lpop),
         CmdCode::Rpop => pop(i, Command::Rpop),
-        CmdCode::CommandDocs => Ok((i, Command::CommandDocs)),
+        CmdCode::CommandDocs => Ok((i, Command::Docs)),
         CmdCode::Ping => Ok((i, Command::Ping)),
         CmdCode::Incr => {
             let (i, key) = string(i)?;

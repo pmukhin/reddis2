@@ -1,6 +1,5 @@
 use mio::net::TcpStream;
 use std::io::{Read, Write};
-use crate::err::RedisError;
 
 pub struct Ops {
     stream: TcpStream,

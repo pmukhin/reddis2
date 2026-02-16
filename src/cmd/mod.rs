@@ -12,7 +12,7 @@ pub enum Info<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command<'a> {
     Ping,
-    CommandDocs,
+    Docs,
     DbSize,
     Config,
     Get(&'a [u8]),

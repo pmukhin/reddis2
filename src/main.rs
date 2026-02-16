@@ -10,7 +10,6 @@ use itertools::Itertools;
 use mio::net::TcpListener;
 use mio::{Events, Interest, Poll, Token};
 use std::collections::{BTreeMap, HashMap, LinkedList};
-use std::io::Read;
 use std::time::Instant;
 use tracing::info;
 use crate::err::RedisError;
@@ -112,7 +111,7 @@ fn main() -> anyhow::Result<()> {
                                     match cmd::parser::parse(&total_read) {
                                         Err(RedisError::IncompleteInput) => continue,
                                         Err(err) => {
-                                            client.ops.generic_error(&err.to_string())?;
+                                            client.ops.generic_error(err.to_string())?;
                                         }
                                         Ok(Command::Get(key)) => match hmap.get(key) {
                                             None => client.ops.key_not_found()?,
@@ -189,7 +188,7 @@ fn main() -> anyhow::Result<()> {
                                             info!("FLUSHDB");
                                             client.ops.ok()?;
                                         }
-                                        Ok(Command::CommandDocs) => {
+                                        Ok(Command::Docs) => {
                                             println!("Command::CommandDocs")
                                         }
                                         Ok(Command::DbSize) => {
