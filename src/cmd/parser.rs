@@ -1,0 +1,469 @@
+use crate::cmd::Command;
+use crate::err::RedisError;
+
+use crate::cmd::Info::{LibName, LibVersion};
+use nom::{
+    Err, IResult,
+    bytes::complete::{tag, tag_no_case, take_while},
+    character::complete::digit0,
+    combinator::{map, opt},
+    error::{ContextError, ErrorKind, ParseError},
+    multi::separated_list0,
+};
+use std::fmt::Debug;
+use std::str::FromStr;
+use std::time::Duration;
+use std::{fmt, num::ParseIntError};
+
+#[derive(Debug)]
+enum CmdCode {
+    Ping,
+    Set,
+    Get,
+    SetEx,
+    Lpush,
+    Rpush,
+    LpushX,
+    RpushX,
+    Lpop,
+    Rpop,
+    Lrange,
+    Hget,
+    Hset,
+    HMget,
+    HMSet,
+    Del,
+    Incr,
+    IncrBy,
+    DbSize,
+    Config,
+    CommandDocs,
+    FlushDb,
+    ClientSetInfo,
+    Ttl,
+    LLen,
+    HgetAll,
+}
+
+fn value_len(i: &[u8]) -> IResult<&[u8], usize, ParseFailure> {
+    let (i, _) = tag("$")(i)?;
+    let (i, _u) = take_while(|c: u8| c >= 48 && c <= 57)(i)?;
+    let (i, _) = tag("\r\n")(i)?;
+    Ok((
+        i,
+        usize::from_str(str::from_utf8(_u).expect("invalid number")).expect("invalid number"),
+    ))
+}
+
+fn cmd<'a>(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
+    let (i, cmd_str) = string(i)?;
+    let v = match cmd_str {
+        b"PING" => CmdCode::Ping,
+        b"SETEX" => CmdCode::SetEx,
+        b"SET" => CmdCode::Set,
+        b"GET" => CmdCode::Get,
+        b"LPUSHX" => CmdCode::LpushX,
+        b"RPUSHX" => CmdCode::RpushX,
+        b"LPUSH" => CmdCode::Lpush,
+        b"RPUSH" => CmdCode::Rpush,
+        b"LPOP" => CmdCode::Lpop,
+        b"RPOP" => CmdCode::Rpop,
+        b"LRANGE" => CmdCode::Lrange,
+        b"HGET" => CmdCode::Hget,
+        b"HSET" => CmdCode::Hset,
+        b"HMGET" => CmdCode::HMget,
+        b"HMSET" => CmdCode::HMSet,
+        b"HGETALL" => CmdCode::HgetAll,
+        b"DEL" => CmdCode::Del,
+        b"INCRBY" => CmdCode::IncrBy,
+        b"INCR" => CmdCode::Incr,
+        b"DBSIZE" => CmdCode::DbSize,
+        b"COMMAND" => CmdCode::CommandDocs,
+        b"CONFIG" => CmdCode::Config,
+        b"FLUSHDB" => CmdCode::FlushDb,
+        b"CLIENT" => CmdCode::ClientSetInfo,
+        b"TTL" => CmdCode::Ttl,
+        b"LLEN" => CmdCode::LLen,
+        unknown => {
+            return Err(nom::Err::Error(ParseFailure(format!(
+                "unknown command: {}",
+                String::from_utf8_lossy(unknown)
+            ))));
+        }
+    };
+    Ok((i, v))
+}
+
+fn u_number<T>(i: &[u8]) -> IResult<&[u8], T, ParseFailure>
+where
+    T: FromStr<Err = ParseIntError>,
+{
+    let (i, v) = string(i)?;
+    Ok((
+        i,
+        T::from_str(str::from_utf8(v).expect("invalid number")).expect("invalid number"),
+    ))
+}
+
+fn value(i: &[u8]) -> IResult<&[u8], &[u8], ParseFailure> {
+    let (i, _) = tag("$")(i)?;
+    let (i, size_str) = digit0(i)?;
+    let str_size =
+        usize::from_str(str::from_utf8(size_str).expect("invalid number")).expect("invalid number");
+    let (i, _) = tag("\r\n")(i)?;
+    let value = &i[0..str_size];
+    Ok((&i[str_size..], value))
+}
+
+fn string(i: &[u8]) -> IResult<&[u8], &[u8], ParseFailure> {
+    let (i, value) = value(i)?;
+    let (i, _) = tag("\r\n")(i)?;
+
+    Ok((i, value))
+}
+
+fn push<'a, F>(i: &'a [u8], f: F) -> IResult<&'a [u8], Command<'a>, ParseFailure>
+where
+    F: Fn(&'a [u8], Vec<&'a [u8]>) -> Command<'a>,
+{
+    let (i, key) = string(i)?;
+    let (i, raw_values) = separated_list0(tag("\r\n"), value)(i)?;
+
+    Ok((i, f(key, raw_values)))
+}
+
+fn pop<'a, F>(i: &'a [u8], f: F) -> IResult<&'a [u8], Command<'a>, ParseFailure>
+where
+    F: Fn(&'a [u8], Option<usize>) -> Command<'a>,
+{
+    let (i, key) = string(i)?;
+    let (i, count) = opt(u_number)(i)?;
+
+    Ok((i, f(key, count)))
+}
+
+fn cmd_len(i: &[u8]) -> IResult<&[u8], usize, ParseFailure> {
+    let (i, _) = tag([b'*'])(i)?;
+    let (i, _u) = take_while(|c: u8| c >= 48 && c <= 57)(i)?;
+    let (i, _) = tag("\r\n")(i)?;
+    Ok((
+        i,
+        usize::from_str(str::from_utf8(_u).expect("invalid number")).expect("invalid number"),
+    ))
+}
+
+fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
+    let (i, _) = opt(cmd_len)(i)?;
+    let (i, cmd) = cmd(i)?;
+    match cmd {
+        CmdCode::Set => {
+            let (i, key) = string(i)?;
+            let (i, value) = string(i)?;
+            let (i, maybe_set_opt) = opt(string)(i)?;
+            match maybe_set_opt {
+                None => Ok((i, Command::Set(key, value, None))),
+                Some(opt) if opt.eq_ignore_ascii_case("EX".as_bytes()) => {
+                    let (i, ttl) = u_number(i)?;
+                    Ok((i, Command::Set(key, value, Some(Duration::from_secs(ttl)))))
+                }
+                Some(opt) if opt.eq_ignore_ascii_case("PX".as_bytes()) => {
+                    let (i, ttl) = u_number(i)?;
+                    Ok((
+                        i,
+                        Command::Set(key, value, Some(Duration::from_millis(ttl))),
+                    ))
+                }
+                Some(opt) if opt.eq_ignore_ascii_case("NX".as_bytes()) => {
+                    Ok((i, Command::SetNx(key, value)))
+                }
+                Some(opt) if opt.eq_ignore_ascii_case("XX".as_bytes()) => {
+                    Ok((i, Command::SetXx(key, value)))
+                }
+                Some(opt) if opt.eq_ignore_ascii_case("GET".as_bytes()) => {
+                    Ok((i, Command::SetAndGet(key, value)))
+                }
+                Some(opt) if opt.eq_ignore_ascii_case("KEEPTTL".as_bytes()) => {
+                    Ok((i, Command::SetKeepTtl(key, value)))
+                }
+                Some(unknown) => Err(nom::Err::Error(ParseFailure(format!(
+                    "unknown command: {}",
+                    String::from_utf8_lossy(unknown)
+                )))),
+            }
+        }
+        CmdCode::Get => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::Get(key)))
+        }
+        CmdCode::SetEx => {
+            let (i, key) = string(i)?;
+            let (i, ttl) = u_number(i)?;
+            let (i, value) = string(i)?;
+            let cmd = Command::Set(key, value, Some(Duration::from_secs(ttl)));
+            Ok((i, cmd))
+        }
+        CmdCode::Lpush => push(i, Command::Lpush),
+        CmdCode::Rpush => push(i, Command::Rpush),
+        CmdCode::LpushX => push(i, Command::LpushX),
+        CmdCode::RpushX => push(i, Command::RpushX),
+        CmdCode::Lpop => pop(i, Command::Lpop),
+        CmdCode::Rpop => pop(i, Command::Rpop),
+        CmdCode::CommandDocs => Ok((i, Command::CommandDocs)),
+        CmdCode::Ping => Ok((i, Command::Ping)),
+        CmdCode::Incr => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::Incr(key)))
+        }
+        CmdCode::IncrBy => {
+            let (i, key) = string(i)?;
+            println!("key={}", String::from_utf8_lossy(key));
+            let (i, incr_by) = u_number::<i64>(i)?;
+            println!("incr_by={}", String::from_utf8_lossy(i));
+            Ok((i, Command::IncrBy(key, incr_by)))
+        }
+        CmdCode::Del => {
+            let (i, raw_values) = separated_list0(tag("\r\n"), value)(i)?;
+            let values = raw_values.to_vec();
+            Ok((i, Command::Del(values)))
+        }
+        CmdCode::DbSize => Ok((i, Command::DbSize)),
+        CmdCode::Hget => {
+            let (i, key) = string(i)?;
+            let (i, field) = string(i)?;
+            Ok((i, Command::Hget(key, field)))
+        }
+        CmdCode::Hset => {
+            let (i, key) = string(i)?;
+            let (i, field) = string(i)?;
+            let (i, value) = string(i)?;
+            Ok((i, Command::Hset(key, field, value)))
+        }
+        CmdCode::HMget => {
+            let (i, key) = string(i)?;
+            let (i, fields) = separated_list0(tag("\r\n"), string)(i)?;
+            Ok((i, Command::HMget(key, fields)))
+        }
+        CmdCode::HMSet => {
+            let (i, key) = string(i)?;
+            let (i, fields_and_values) = separated_list0(tag("\r\n"), string)(i)?;
+            Ok((i, Command::HMset(key, fields_and_values)))
+        }
+        CmdCode::HgetAll => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::HgetAll(key)))
+        }
+        CmdCode::Config => Ok((i, Command::Config)),
+        CmdCode::FlushDb => Ok((i, Command::FlushDb)),
+        CmdCode::ClientSetInfo => {
+            let (i, _) = string(i)?; // set info
+            let (i, param) = string(i)?;
+            let (i, value) = string(i)?;
+            let param = if param.eq_ignore_ascii_case("LIB-NAME".as_bytes()) {
+                LibName(value)
+            } else {
+                LibVersion(value)
+            };
+            Ok((i, Command::ClientSetInfo(param)))
+        }
+        CmdCode::Ttl => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::Ttl(key)))
+        }
+        CmdCode::Lrange => {
+            let (i, key) = string(i)?;
+            let (i, start) = u_number(i)?;
+            let (i, end) = u_number(i)?;
+            Ok((i, Command::Lrange(key, start, end)))
+        }
+        CmdCode::LLen => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::LLen(key)))
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ParseFailure(String);
+
+impl fmt::Display for ParseFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "parsing failure: `{:?}`", self.0)
+    }
+}
+
+pub fn parse(i: &[u8]) -> Result<Command, RedisError> {
+    let (_, cmd) = root(i)?;
+    Ok(cmd)
+}
+
+impl From<nom::Err<ParseFailure>> for RedisError {
+    fn from(value: nom::Err<ParseFailure>) -> Self {
+        match value {
+            Err::Incomplete(_) => todo!(),
+            Err::Error(ParseFailure(s)) => RedisError::Parse(format!("can't parse input: {s}")),
+            Err::Failure(_) => todo!(),
+        }
+    }
+}
+
+impl From<ParseIntError> for ParseFailure {
+    fn from(value: ParseIntError) -> Self {
+        ParseFailure(format!("can't parse int: {value}"))
+    }
+}
+
+impl ParseError<&[u8]> for ParseFailure {
+    fn from_error_kind(input: &[u8], kind: ErrorKind) -> Self {
+        ParseFailure(format!("{:?}, {}", input, kind.description()))
+    }
+
+    fn append(input: &[u8], kind: ErrorKind, other: Self) -> Self {
+        ParseFailure(format!(
+            "{}, kind = {}, other = {}",
+            String::from_utf8_lossy(input),
+            kind.description(),
+            other
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cmd::Command;
+
+    #[test]
+    fn test_get() {
+        let raw_cmd = "$3\r\nGET\r\n$3\r\naaa\r\n".as_bytes();
+        assert_eq!(parse(raw_cmd).unwrap(), Command::Get("aaa".as_bytes()));
+    }
+
+    #[test]
+    fn test_ping() {
+        let raw_cmd = "$4\r\nPING\r\n".as_bytes();
+        assert_eq!(parse(raw_cmd).unwrap(), Command::Ping);
+    }
+
+    #[test]
+    fn test_set() {
+        let raw_cmd = "$3\r\nSET\r\n$3\r\naaa\r\n$3\r\naaa\r\n".as_bytes();
+        assert_eq!(
+            parse(raw_cmd).unwrap(),
+            Command::Set("aaa".as_bytes(), "aaa".as_bytes(), None)
+        );
+    }
+
+    #[test]
+    fn test_setex() {
+        let raw_cmd = "$5\r\nSETEX\r\n$3\r\naaa\r\n$1\r\n5\r\n$3\r\naaa\r\n".as_bytes();
+        assert_eq!(
+            parse(raw_cmd).unwrap(),
+            Command::Set(
+                "aaa".as_bytes(),
+                "aaa".as_bytes(),
+                Some(Duration::from_secs(5))
+            )
+        );
+    }
+
+    #[test]
+    fn test_lpush() {
+        let raw_cmd =
+            "$5\r\nLPUSH\r\n$3\r\naaa\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n4\r\n$1\r\n5\r\n"
+                .as_bytes();
+        assert_eq!(
+            parse(raw_cmd).unwrap(),
+            Command::Lpush(
+                "aaa".as_bytes(),
+                vec!["1", "2", "3", "4", "5"]
+                    .iter()
+                    .map(|v| v.as_bytes())
+                    .collect(),
+            )
+        );
+    }
+
+    #[test]
+    fn test_rpush() {
+        let raw_cmd =
+            "$5\r\nRPUSH\r\n$3\r\naaa\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n4\r\n$1\r\n5\r\n"
+                .as_bytes();
+        assert_eq!(
+            parse(raw_cmd).unwrap(),
+            Command::Rpush(
+                "aaa".as_bytes(),
+                vec!["1", "2", "3", "4", "5"]
+                    .iter()
+                    .map(|v| v.as_bytes())
+                    .collect(),
+            )
+        );
+    }
+
+    #[test]
+    fn test_lpushx() {
+        let raw_cmd =
+            "$6\r\nLPUSHX\r\n$3\r\naaa\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n4\r\n$1\r\n5\r\n"
+                .as_bytes();
+        assert_eq!(
+            parse(raw_cmd).unwrap(),
+            Command::LpushX(
+                "aaa".as_bytes(),
+                vec!["1", "2", "3", "4", "5"]
+                    .iter()
+                    .map(|v| v.as_bytes())
+                    .collect(),
+            )
+        );
+    }
+
+    #[test]
+    fn test_rpushx() {
+        let raw_cmd =
+            "$6\r\nRPUSHX\r\n$3\r\naaa\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n4\r\n$1\r\n5\r\n"
+                .as_bytes();
+        assert_eq!(
+            parse(raw_cmd).unwrap(),
+            Command::RpushX(
+                "aaa".as_bytes(),
+                vec!["1", "2", "3", "4", "5"]
+                    .iter()
+                    .map(|v| v.as_bytes())
+                    .collect(),
+            )
+        );
+    }
+
+    #[test]
+    fn test_lpop() {
+        let raw_cmd = "$4\r\nLPOP\r\n$2\r\naa\r\n$1\r\n2\r\n".as_bytes();
+        assert_eq!(
+            parse(raw_cmd).unwrap(),
+            Command::Lpop("aa".as_bytes(), Some(2))
+        );
+    }
+
+    #[test]
+    fn test_rpop() {
+        let raw_cmd = "$4\r\nRPOP\r\n$2\r\naa\r\n$1\r\n2\r\n".as_bytes();
+        assert_eq!(
+            parse(raw_cmd).unwrap(),
+            Command::Rpop("aa".as_bytes(), Some(2))
+        );
+    }
+
+    #[test]
+    fn test_del() {
+        let raw_cmd = "$3\r\nDEL\r\n$3\r\naaa\r\n$3\r\nbbb\r\n$3\r\nccc\r\n".as_bytes();
+        assert_eq!(
+            parse(raw_cmd).unwrap(),
+            Command::Del(vec!["aaa".as_bytes(), "bbb".as_bytes(), "ccc".as_bytes()]),
+        );
+    }
+
+    #[test]
+    fn test_conf() {
+        let raw_cmd = "$6\r\nCONFIG\r\n$3\r\nGET\r\n$3\r\nbbb\r\n".as_bytes();
+        assert_eq!(parse(raw_cmd).unwrap(), Command::Config);
+    }
+}
