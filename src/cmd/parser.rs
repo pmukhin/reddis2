@@ -299,8 +299,8 @@ pub fn parse(i: &[u8]) -> Result<Command<'_>, RedisError> {
 impl From<nom::Err<ParseFailure>> for RedisError {
     fn from(value: nom::Err<ParseFailure>) -> Self {
         match value {
-            Err::Incomplete(_) => todo!(),
-            Err::Error(ParseFailure(s)) => RedisError::Parse(format!("can't parse input: {s}")),
+            Err::Incomplete(_) => RedisError::IncompleteInput,
+            Err::Error(ParseFailure(s)) => RedisError::Parse(format!("invalid input: {s}")),
             Err::Failure(_) => todo!(),
         }
     }

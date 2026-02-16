@@ -5,6 +5,7 @@ use std::num::ParseIntError;
 
 #[derive(Debug)]
 pub enum RedisError {
+    IncompleteInput,
     Parse(String),
     IO(String),
     Type,
@@ -17,6 +18,7 @@ impl fmt::Display for RedisError {
                 write!(f, "Operation against a key holding the wrong kind of value")
             }
             RedisError::Parse(message) => write!(f, "{message}"),
+            RedisError::IncompleteInput => write!(f, "incomplete input"),
             RedisError::IO(message) => write!(f, "{message}"),
         }
     }

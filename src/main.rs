@@ -9,11 +9,11 @@ use bytes::Bytes;
 use itertools::Itertools;
 use mio::net::TcpListener;
 use mio::{Events, Interest, Poll, Token};
-use nom::combinator::value;
 use std::collections::{BTreeMap, HashMap, LinkedList};
 use std::io::Read;
 use std::time::Instant;
 use tracing::info;
+use crate::err::RedisError;
 
 const SERVER: Token = Token(0);
 
@@ -110,8 +110,9 @@ fn main() -> anyhow::Result<()> {
                                         String::from_utf8_lossy(&buf[..n])
                                     );
                                     match cmd::parser::parse(&total_read) {
+                                        Err(RedisError::IncompleteInput) => continue,
                                         Err(err) => {
-                                            panic!("error parsing command: {}", err);
+                                            client.ops.generic_error(&err.to_string())?;
                                         }
                                         Ok(Command::Get(key)) => match hmap.get(key) {
                                             None => client.ops.key_not_found()?,

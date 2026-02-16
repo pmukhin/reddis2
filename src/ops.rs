@@ -1,5 +1,6 @@
 use mio::net::TcpStream;
 use std::io::{Read, Write};
+use crate::err::RedisError;
 
 pub struct Ops {
     stream: TcpStream,
@@ -43,9 +44,16 @@ impl Ops {
         self.stream.write_all("$-1\r\n".as_bytes())
     }
 
-    pub fn wrong_type(&mut self, message: &str) -> std::io::Result<()> {
-        self.stream
-            .write_fmt(format_args!("-WRONGTYPE {}\r\n", message))
+    pub fn wrong_type<A: AsRef<[u8]>>(&mut self, message: A) -> std::io::Result<()> {
+        self.stream.write_all("-WRONGTYPE ".as_bytes())?;
+        self.stream.write_all(message.as_ref())?;
+        self.stream.write_all("\r\n".as_bytes())
+    }
+
+    pub(crate) fn generic_error<A: AsRef<[u8]>>(&mut self, message: A) -> std::io::Result<()> {
+        self.stream.write_all("-ERR ".as_bytes())?;
+        self.stream.write_all(message.as_ref())?;
+        self.stream.write_all("\r\n".as_bytes())
     }
 
     pub fn unwrap_stream(self) -> TcpStream {
