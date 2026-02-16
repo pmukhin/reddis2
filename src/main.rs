@@ -2,6 +2,7 @@ mod cmd;
 mod err;
 mod hmap_ops;
 mod list_ops;
+mod numerical_ops;
 mod ops;
 mod stored_value;
 
@@ -10,6 +11,7 @@ use crate::err::RedisError;
 use hmap_ops::HMapOps;
 
 use crate::list_ops::{HMapListOps, Popped};
+use crate::numerical_ops::HMapNumericalOps;
 use crate::stored_value::StoredValue;
 use anyhow::Context;
 use bytes::Bytes;
@@ -238,54 +240,15 @@ fn main() -> anyhow::Result<()> {
                                     }
                                     client.ops.ok()?;
                                 }
-                                Command::Incr(key) => match hmap.get(key) {
-                                    None => client.ops.key_not_found()?,
-                                    Some(StoredValue::Plain(bytes)) => {
-                                        let str = String::from_utf8_lossy(bytes);
-                                        match str::parse::<i64>(&str) {
-                                            Ok(num) => {
-                                                let new_value = (num + 1).to_string();
-                                                let value_as_bytes =
-                                                    Bytes::copy_from_slice(new_value.as_bytes());
-                                                client.ops.write_bulk_string(&value_as_bytes)?;
-                                                hmap.insert(
-                                                    Bytes::from(key.to_vec().into_boxed_slice()),
-                                                    StoredValue::Plain(value_as_bytes),
-                                                );
-                                            }
-                                            Err(_) => client.ops.wrong_type(
-                                                "stored value isn't a 64 bit integer",
-                                            )?,
-                                        }
-                                    }
-                                    Some(value) => {
-                                        panic!("expected plain value, got {value:?}")
-                                    }
+                                Command::Incr(key) => match hmap.incr_by(key, 1) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some(value)) => client.ops.write_bulk_string(value)?,
                                 },
-                                Command::IncrBy(key, incr_by) => match hmap.get(key) {
-                                    None => client.ops.key_not_found()?,
-                                    Some(StoredValue::Plain(bytes)) => {
-                                        let str = String::from_utf8_lossy(bytes);
-                                        match str::parse::<i64>(&str) {
-                                            Ok(num) => {
-                                                let new_value = (num + incr_by).to_string();
-                                                let value_as_bytes = Bytes::copy_from_slice(
-                                                    new_value.into_bytes().as_slice(),
-                                                );
-                                                client.ops.write_bulk_string(&value_as_bytes)?;
-                                                hmap.insert(
-                                                    Bytes::copy_from_slice(key),
-                                                    StoredValue::Plain(value_as_bytes),
-                                                );
-                                            }
-                                            Err(_) => client.ops.wrong_type(
-                                                "stored value isn't a 64 bit integer",
-                                            )?,
-                                        }
-                                    }
-                                    Some(value) => {
-                                        panic!("expected plain value, got {value:?}")
-                                    }
+                                Command::IncrBy(key, incr_by) => match hmap.incr_by(key, incr_by) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some(value)) => client.ops.write_bulk_string(value)?,
                                 },
                                 Command::ClientSetInfo(_) => {
                                     client.ops.ok()?;
