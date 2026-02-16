@@ -101,13 +101,6 @@ fn main() -> anyhow::Result<()> {
                                 }
                                 Ok(n) => {
                                     total_read.extend_from_slice(&buf[..n]);
-
-                                    // @todo check that the command is complete
-
-                                    info!(
-                                        "[{token:?}] command: {}",
-                                        String::from_utf8_lossy(&buf[..n])
-                                    );
                                     match cmd::parser::parse(&total_read) {
                                         Err(RedisError::IncompleteInput) => continue,
                                         Err(err) => {
