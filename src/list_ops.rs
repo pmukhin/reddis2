@@ -2,7 +2,6 @@ use crate::stored_value::StoredValue;
 use anyhow::bail;
 use bytes::Bytes;
 use std::collections::{HashMap, LinkedList};
-use tracing::info;
 
 pub enum Popped {
     None,
@@ -63,7 +62,9 @@ impl HMapListOps for HashMap<Bytes, StoredValue> {
         let is_multi_count = n.is_some();
         let mut times_to_pop = n.unwrap_or(1);
         let mut to_ret = Vec::new();
-        while times_to_pop > 0 && let Some(v) = ll.pop_front() {
+        while times_to_pop > 0
+            && let Some(v) = ll.pop_front()
+        {
             to_ret.push(v.clone());
             times_to_pop -= 1;
         }
@@ -86,7 +87,8 @@ impl HMapListOps for HashMap<Bytes, StoredValue> {
         let is_multi_count = n.is_some();
         let mut times_to_pop = n.unwrap_or(1);
         let mut to_ret = Vec::new();
-        while times_to_pop > 0 && let Some(v) = ll.pop_back()
+        while times_to_pop > 0
+            && let Some(v) = ll.pop_back()
         {
             to_ret.push(v.clone());
             times_to_pop -= 1;

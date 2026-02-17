@@ -130,7 +130,7 @@ fn main() -> anyhow::Result<()> {
                                     Some(StoredValue::Plain(bytes)) => {
                                         client.ops.write_bulk_string(bytes)?;
                                     }
-                                    Some(_) => client.ops.wrong_type("expected STRING")?
+                                    Some(_) => client.ops.wrong_type("expected STRING")?,
                                 },
                                 Command::Set(key, value, maybe_ttl) => {
                                     hmap.insert_alloc(
@@ -261,22 +261,30 @@ fn main() -> anyhow::Result<()> {
                                     Some(StoredValue::List(ll)) => {
                                         let start = if start < 0 {
                                             ll.len() as isize - start
-                                        } else { start };
+                                        } else {
+                                            start
+                                        };
                                         let end = if end < 0 {
                                             ll.len() as isize - end
-                                        } else {end};
+                                        } else {
+                                            end
+                                        };
                                         // @todo optimise this...
-                                        info!("lpop: key = {}, start = {}, end = {}, ll={:?}", String::from_utf8_lossy(key), start, end, &ll);
+                                        info!(
+                                            "lpop: key = {}, start = {}, end = {}, ll={:?}",
+                                            String::from_utf8_lossy(key),
+                                            start,
+                                            end,
+                                            &ll
+                                        );
 
                                         let vec: Vec<_> = if start <= end {
-                                            ll
-                                                .iter()
+                                            ll.iter()
                                                 .skip(start as usize)
                                                 .take(end as usize + 1)
                                                 .collect()
                                         } else {
-                                            ll
-                                                .iter()
+                                            ll.iter()
                                                 .skip(end as usize)
                                                 .take(start as usize + 1)
                                                 .rev()
