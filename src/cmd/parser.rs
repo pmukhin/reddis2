@@ -43,6 +43,10 @@ enum CmdCode {
     Ttl,
     LLen,
     HgetAll,
+    HincrBy,
+    Exists,
+    Hexists,
+    Hkeys,
 }
 
 fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
@@ -64,6 +68,10 @@ fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
         b"HMGET" => CmdCode::HMget,
         b"HMSET" => CmdCode::HMSet,
         b"HGETALL" => CmdCode::HgetAll,
+        b"HINCRBY" => CmdCode::HincrBy,
+        b"EXISTS" => CmdCode::Exists,
+        b"HEXISTS" => CmdCode::Hexists,
+        b"HKEYS" => CmdCode::Hkeys,
         b"DEL" => CmdCode::Del,
         b"INCRBY" => CmdCode::IncrBy,
         b"INCR" => CmdCode::Incr,
@@ -241,6 +249,25 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         CmdCode::HgetAll => {
             let (i, key) = string(i)?;
             Ok((i, Command::HgetAll(key)))
+        }
+        CmdCode::HincrBy => {
+            let (i, key) = string(i)?;
+            let (i, field) = string(i)?;
+            let (i, incr_by) = u_number::<i64>(i)?;
+            Ok((i, Command::HincrBy(key, field, incr_by)))
+        }
+        CmdCode::Exists => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::Exists(key)))
+        }
+        CmdCode::Hexists => {
+            let (i, key) = string(i)?;
+            let (i, field) = string(i)?;
+            Ok((i, Command::Hexists(key, field)))
+        }
+        CmdCode::Hkeys => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::Hkeys(key)))
         }
         CmdCode::Config => Ok((i, Command::Config)),
         CmdCode::FlushDb => Ok((i, Command::FlushDb)),

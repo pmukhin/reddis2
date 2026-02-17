@@ -312,6 +312,32 @@ fn main() -> anyhow::Result<()> {
                                         client.ops.write_array(values.into_iter(), len)?
                                     }
                                 },
+                                Command::HincrBy(key, field, incr_by) => {
+                                    match hmap.dict_incr_by(key, field, incr_by) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(value) => client.ops.write_bulk_string(value)?,
+                                    }
+                                }
+                                Command::Exists(key) => {
+                                    let exists = if hmap.contains_key(key) { 1 } else { 0 };
+                                    client.ops.write_bulk_string(exists.to_string())?;
+                                }
+                                Command::Hexists(key, field) => {
+                                    match hmap.dict_exists(key, field) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(exists) => {
+                                            let v = if exists { 1 } else { 0 };
+                                            client.ops.write_bulk_string(v.to_string())?;
+                                        }
+                                    }
+                                }
+                                Command::Hkeys(key) => match hmap.dict_keys(key) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some((keys, len))) => {
+                                        client.ops.write_array(keys.into_iter(), len)?
+                                    }
+                                },
                             }
                             client.read_buf.clear();
                             info!("[{token:?}] command is executed, buffer cleared");

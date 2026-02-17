@@ -40,4 +40,8 @@ pub enum Command<'a> {
     HMget(&'a [u8], Vec<&'a [u8]>),
     HMset(&'a [u8], Vec<&'a [u8]>),
     HgetAll(&'a [u8]),
+    HincrBy(&'a [u8], &'a [u8], i64),
+    Exists(&'a [u8]),
+    Hexists(&'a [u8], &'a [u8]),
+    Hkeys(&'a [u8]),
 }
