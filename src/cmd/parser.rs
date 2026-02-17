@@ -446,7 +446,26 @@ impl fmt::Display for ParseFailure {
     }
 }
 
+fn inline_to_resp(i: &[u8]) -> Vec<u8> {
+    let line = i.strip_suffix(b"\r\n").unwrap_or(i);
+    let parts: Vec<&[u8]> = line.split(|&b| b == b' ').collect();
+    let mut buf = format!("*{}\r\n", parts.len()).into_bytes();
+    for part in parts {
+        buf.extend_from_slice(format!("${}\r\n", part.len()).as_bytes());
+        buf.extend_from_slice(part);
+        buf.extend_from_slice(b"\r\n");
+    }
+    buf
+}
+
 pub fn parse(i: &[u8]) -> Result<Command<'_>, RedisError> {
+    if !i.starts_with(b"*") && !i.starts_with(b"$") {
+        let resp = inline_to_resp(i);
+        let (_, cmd) = root(&resp)?;
+        // SAFETY: inline commands (PING, DBSIZE, etc.) don't borrow from input
+        let cmd: Command<'static> = unsafe { std::mem::transmute(cmd) };
+        return Ok(cmd);
+    }
     let (_, cmd) = root(i)?;
     Ok(cmd)
 }

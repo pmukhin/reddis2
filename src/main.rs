@@ -190,7 +190,7 @@ fn main() -> anyhow::Result<()> {
                                     todo!("not implemented: Command::DbSize")
                                 }
                                 Command::Config => {
-                                    todo!("not implemented: Command::Config")
+                                    client.ops.write_array(std::iter::empty::<&[u8]>(), 0)?;
                                 }
                                 Command::Lpush(key, values) => match hmap.prepend(key, values) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
