@@ -462,6 +462,12 @@ fn main() -> anyhow::Result<()> {
                                     Ok(None) => client.ops.key_not_found()?,
                                     Ok(Some(value)) => client.ops.write_integer(value)?,
                                 },
+                                Command::InfoCmd => {
+                                    client.ops.write_info(hmap.len())?;
+                                }
+                                Command::LatencyHistogram => {
+                                    client.ops.write_latency_histogram()?;
+                                }
                             }
                             client.read_buf.clear();
                             trace!("[{token:?}] command is executed, buffer cleared");

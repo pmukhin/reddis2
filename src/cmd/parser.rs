@@ -63,6 +63,8 @@ enum CmdCode {
     Zrangebyscore,
     Zincrby,
     Zcard,
+    Info,
+    Latency,
 }
 
 fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
@@ -112,6 +114,8 @@ fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
         b"CONFIG" => CmdCode::Config,
         b"FLUSHDB" => CmdCode::FlushDb,
         b"CLIENT" => CmdCode::ClientSetInfo,
+        b"INFO" => CmdCode::Info,
+        b"LATENCY" => CmdCode::Latency,
         b"TTL" => CmdCode::Ttl,
         b"LLEN" => CmdCode::LLen,
         unknown => {
@@ -415,7 +419,23 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
             let (i, member) = string(i)?;
             Ok((i, Command::Zincrby(key, incr, member)))
         }
+        CmdCode::Latency => {
+            // consume subcommand (HISTOGRAM) and any optional command filters
+            let (mut i, _sub) = opt(string)(i)?;
+            loop {
+                let (i2, arg) = opt(string)(i)?;
+                i = i2;
+                if arg.is_none() {
+                    break;
+                }
+            }
+            Ok((i, Command::LatencyHistogram))
+        }
         CmdCode::Config => Ok((i, Command::Config)),
+        CmdCode::Info => {
+            let (i, _section) = opt(string)(i)?;
+            Ok((i, Command::InfoCmd))
+        }
         CmdCode::FlushDb => Ok((i, Command::FlushDb)),
         CmdCode::ClientSetInfo => {
             let (i, _) = string(i)?; // set info

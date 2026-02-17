@@ -59,4 +59,6 @@ pub enum Command<'a> {
     Zrangebyscore(&'a [u8], i64, i64, bool),
     Zincrby(&'a [u8], i64, &'a [u8]),
     Zcard(&'a [u8]),
+    InfoCmd,
+    LatencyHistogram,
 }
