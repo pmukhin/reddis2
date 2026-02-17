@@ -54,6 +54,14 @@ enum CmdCode {
     Sdiff,
     Scard,
     Smembers,
+    Zadd,
+    Zrange,
+    Zrevrange,
+    Zrank,
+    Zrevrank,
+    Zscore,
+    Zrangebyscore,
+    Zincrby,
 }
 
 fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
@@ -86,6 +94,14 @@ fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
         b"SDIFF" => CmdCode::Sdiff,
         b"SCARD" => CmdCode::Scard,
         b"SMEMBERS" => CmdCode::Smembers,
+        b"ZADD" => CmdCode::Zadd,
+        b"ZRANGE" => CmdCode::Zrange,
+        b"ZREVRANGE" => CmdCode::Zrevrange,
+        b"ZRANK" => CmdCode::Zrank,
+        b"ZREVRANK" => CmdCode::Zrevrank,
+        b"ZSCORE" => CmdCode::Zscore,
+        b"ZRANGEBYSCORE" => CmdCode::Zrangebyscore,
+        b"ZINCRBY" => CmdCode::Zincrby,
         b"DEL" => CmdCode::Del,
         b"INCRBY" => CmdCode::IncrBy,
         b"INCR" => CmdCode::Incr,
@@ -308,6 +324,77 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         CmdCode::Smembers => {
             let (i, key) = string(i)?;
             Ok((i, Command::Smembers(key)))
+        }
+        CmdCode::Zadd => {
+            let (i, key) = string(i)?;
+            let (i, raw) = separated_list0(tag("\r\n"), value)(i)?;
+            let mut members = Vec::new();
+            for chunk in raw.chunks(2) {
+                let score = i64::from_str(str::from_utf8(chunk[0]).expect("invalid score"))
+                    .expect("invalid score");
+                members.push((score, chunk[1]));
+            }
+            Ok((i, Command::Zadd(key, members)))
+        }
+        CmdCode::Zrange => {
+            let (i, key) = string(i)?;
+            let (i, start) = u_number::<isize>(i)?;
+            let (i, stop) = u_number::<isize>(i)?;
+            let mut withscores = false;
+            let mut rev = false;
+            let (mut i, flag1) = opt(string)(i)?;
+            if let Some(f) = flag1 {
+                if f.eq_ignore_ascii_case(b"WITHSCORES") { withscores = true; }
+                if f.eq_ignore_ascii_case(b"REV") { rev = true; }
+                let (i2, flag2) = opt(string)(i)?;
+                i = i2;
+                if let Some(f) = flag2 {
+                    if f.eq_ignore_ascii_case(b"WITHSCORES") { withscores = true; }
+                    if f.eq_ignore_ascii_case(b"REV") { rev = true; }
+                }
+            }
+            if rev {
+                Ok((i, Command::Zrevrange(key, start, stop, withscores)))
+            } else {
+                Ok((i, Command::Zrange(key, start, stop, withscores)))
+            }
+        }
+        CmdCode::Zrevrange => {
+            let (i, key) = string(i)?;
+            let (i, start) = u_number::<isize>(i)?;
+            let (i, stop) = u_number::<isize>(i)?;
+            let (i, maybe_flag) = opt(string)(i)?;
+            let withscores = matches!(maybe_flag, Some(f) if f.eq_ignore_ascii_case(b"WITHSCORES"));
+            Ok((i, Command::Zrevrange(key, start, stop, withscores)))
+        }
+        CmdCode::Zrank => {
+            let (i, key) = string(i)?;
+            let (i, member) = string(i)?;
+            Ok((i, Command::Zrank(key, member)))
+        }
+        CmdCode::Zrevrank => {
+            let (i, key) = string(i)?;
+            let (i, member) = string(i)?;
+            Ok((i, Command::Zrevrank(key, member)))
+        }
+        CmdCode::Zscore => {
+            let (i, key) = string(i)?;
+            let (i, member) = string(i)?;
+            Ok((i, Command::Zscore(key, member)))
+        }
+        CmdCode::Zrangebyscore => {
+            let (i, key) = string(i)?;
+            let (i, min) = u_number::<i64>(i)?;
+            let (i, max) = u_number::<i64>(i)?;
+            let (i, maybe_flag) = opt(string)(i)?;
+            let withscores = matches!(maybe_flag, Some(f) if f.eq_ignore_ascii_case(b"WITHSCORES"));
+            Ok((i, Command::Zrangebyscore(key, min, max, withscores)))
+        }
+        CmdCode::Zincrby => {
+            let (i, key) = string(i)?;
+            let (i, incr) = u_number::<i64>(i)?;
+            let (i, member) = string(i)?;
+            Ok((i, Command::Zincrby(key, incr, member)))
         }
         CmdCode::Config => Ok((i, Command::Config)),
         CmdCode::FlushDb => Ok((i, Command::FlushDb)),

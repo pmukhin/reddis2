@@ -51,4 +51,12 @@ pub enum Command<'a> {
     Sdiff(Vec<&'a [u8]>),
     Scard(&'a [u8]),
     Smembers(&'a [u8]),
+    Zadd(&'a [u8], Vec<(i64, &'a [u8])>),
+    Zrange(&'a [u8], isize, isize, bool),
+    Zrevrange(&'a [u8], isize, isize, bool),
+    Zrank(&'a [u8], &'a [u8]),
+    Zrevrank(&'a [u8], &'a [u8]),
+    Zscore(&'a [u8], &'a [u8]),
+    Zrangebyscore(&'a [u8], i64, i64, bool),
+    Zincrby(&'a [u8], i64, &'a [u8]),
 }

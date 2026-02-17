@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use std::collections::{HashMap, HashSet, LinkedList};
+use std::collections::{BTreeSet, HashMap, HashSet, LinkedList};
 use std::time::Instant;
 
 #[derive(Debug)]
@@ -9,4 +9,5 @@ pub enum StoredValue {
     List(LinkedList<Bytes>),
     Dict(HashMap<Bytes, Bytes>),
     Set(HashSet<Bytes>),
+    SortedSet(BTreeSet<(i64, Bytes)>, HashMap<Bytes, i64>),
 }

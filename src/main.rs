@@ -6,6 +6,7 @@ mod list_ops;
 mod numerical_ops;
 mod ops;
 mod set_ops;
+mod sorted_set_ops;
 mod stored_value;
 
 use crate::cmd::Command;
@@ -16,6 +17,7 @@ use hmap_ops::HMapOps;
 use crate::list_ops::{HMapListOps, Popped};
 use crate::numerical_ops::HMapNumericalOps;
 use crate::set_ops::HMapSetOps;
+use crate::sorted_set_ops::HMapSortedSetOps;
 use crate::stored_value::StoredValue;
 use anyhow::Context;
 use bytes::Bytes;
@@ -389,6 +391,76 @@ fn main() -> anyhow::Result<()> {
                                         client.ops.write_array(members.into_iter(), len)?
                                     }
                                 },
+                                Command::Zadd(key, members) => {
+                                    match hmap.zset_add(key, &members) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(added) => {
+                                            client.ops.write_bulk_string(added.to_string())?
+                                        }
+                                    }
+                                }
+                                Command::Zrange(key, start, stop, withscores) => {
+                                    match hmap.zset_range(key, start, stop, withscores) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some((values, len))) => {
+                                            client.ops.write_array(values.iter(), len)?
+                                        }
+                                    }
+                                }
+                                Command::Zrevrange(key, start, stop, withscores) => {
+                                    match hmap.zset_revrange(key, start, stop, withscores) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some((values, len))) => {
+                                            client.ops.write_array(values.iter(), len)?
+                                        }
+                                    }
+                                }
+                                Command::Zrank(key, member) => {
+                                    match hmap.zset_rank(key, member) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(rank)) => {
+                                            client.ops.write_bulk_string(rank.to_string())?
+                                        }
+                                    }
+                                }
+                                Command::Zrevrank(key, member) => {
+                                    match hmap.zset_revrank(key, member) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(rank)) => {
+                                            client.ops.write_bulk_string(rank.to_string())?
+                                        }
+                                    }
+                                }
+                                Command::Zscore(key, member) => {
+                                    match hmap.zset_score(key, member) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(score)) => {
+                                            client.ops.write_bulk_string(score.to_string())?
+                                        }
+                                    }
+                                }
+                                Command::Zrangebyscore(key, min, max, withscores) => {
+                                    match hmap.zset_range_by_score(key, min, max, withscores) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some((values, len))) => {
+                                            client.ops.write_array(values.iter(), len)?
+                                        }
+                                    }
+                                }
+                                Command::Zincrby(key, incr, member) => {
+                                    match hmap.zset_incr_by(key, incr, member) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(score) => {
+                                            client.ops.write_bulk_string(score.to_string())?
+                                        }
+                                    }
+                                }
                             }
                             client.read_buf.clear();
                             info!("[{token:?}] command is executed, buffer cleared");
