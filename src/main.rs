@@ -26,6 +26,7 @@ const SERVER: Token = Token(0);
 
 struct Client {
     ops: ops::Ops,
+    read_buf: Vec<u8>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -45,6 +46,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut clients: HashMap<Token, Client> = HashMap::new();
     let mut next_token_id: usize = 1;
+    let mut buf = [0u8; 1024];
 
     info!("TCP server listening on {addr}");
 
@@ -75,6 +77,7 @@ fn main() -> anyhow::Result<()> {
                         token,
                         Client {
                             ops: ops::Ops::new(stream),
+                            read_buf: Vec::with_capacity(4096),
                         },
                     );
                 },
@@ -90,8 +93,6 @@ fn main() -> anyhow::Result<()> {
                         .with_context(|| format!("client not registered: {:?}", token))?;
 
                     if event.is_readable() {
-                        let mut buf = [0u8; 1024];
-                        let mut total_read = Vec::with_capacity(4096);
                         loop {
                             let cmd = match client.ops.read(&mut buf) {
                                 Ok(0) => {
@@ -100,8 +101,8 @@ fn main() -> anyhow::Result<()> {
                                     break;
                                 }
                                 Ok(n) => {
-                                    total_read.extend_from_slice(&buf[..n]);
-                                    let maybe_command = cmd::parser::parse(&total_read);
+                                    client.read_buf.extend_from_slice(&buf[..n]);
+                                    let maybe_command = cmd::parser::parse(&client.read_buf);
                                     match maybe_command {
                                         Err(RedisError::IncompleteInput) => continue,
                                         Err(err) => {
@@ -235,9 +236,7 @@ fn main() -> anyhow::Result<()> {
                                     }
                                 }
                                 Command::Del(keys) => {
-                                    for key in keys {
-                                        hmap.remove(key);
-                                    }
+                                    hmap.delete_all(keys.into_iter());
                                     client.ops.ok()?;
                                 }
                                 Command::Incr(key) => match hmap.incr_by(key, 1) {
@@ -358,7 +357,7 @@ fn main() -> anyhow::Result<()> {
                                     _ => client.ops.wrong_type("stored value isn't a dict")?,
                                 },
                             }
-                            total_read.clear();
+                            client.read_buf.clear();
                             info!("[{token:?}] command is executed, buffer cleared");
                             break;
                         }

@@ -14,6 +14,8 @@ pub trait HMapOps<K, V> {
         value: &[u8],
         maybe_end_of_life: Option<Instant>,
     ) -> Option<StoredValue>;
+
+    fn delete_all<'a>(&'a mut self, keys: impl Iterator<Item = &'a [u8]>);
 }
 
 impl HMapOps<Bytes, StoredValue> for HashMap<Bytes, StoredValue> {
@@ -43,5 +45,11 @@ impl HMapOps<Bytes, StoredValue> for HashMap<Bytes, StoredValue> {
                 Some(instant) => StoredValue::TtlPlain(value, instant),
             },
         )
+    }
+
+    fn delete_all<'a>(&'a mut self, keys: impl Iterator<Item = &'a [u8]>) {
+        for key in keys {
+            self.remove(key);
+        }
     }
 }
