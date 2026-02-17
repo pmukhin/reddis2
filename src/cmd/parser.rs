@@ -344,13 +344,21 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
             let mut rev = false;
             let (mut i, flag1) = opt(string)(i)?;
             if let Some(f) = flag1 {
-                if f.eq_ignore_ascii_case(b"WITHSCORES") { withscores = true; }
-                if f.eq_ignore_ascii_case(b"REV") { rev = true; }
+                if f.eq_ignore_ascii_case(b"WITHSCORES") {
+                    withscores = true;
+                }
+                if f.eq_ignore_ascii_case(b"REV") {
+                    rev = true;
+                }
                 let (i2, flag2) = opt(string)(i)?;
                 i = i2;
                 if let Some(f) = flag2 {
-                    if f.eq_ignore_ascii_case(b"WITHSCORES") { withscores = true; }
-                    if f.eq_ignore_ascii_case(b"REV") { rev = true; }
+                    if f.eq_ignore_ascii_case(b"WITHSCORES") {
+                        withscores = true;
+                    }
+                    if f.eq_ignore_ascii_case(b"REV") {
+                        rev = true;
+                    }
                 }
             }
             if rev {

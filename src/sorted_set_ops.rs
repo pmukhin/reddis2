@@ -69,9 +69,12 @@ fn collect_with_scores(
 
 impl HMapSortedSetOps for HashMap<Bytes, StoredValue> {
     fn zset_add(&mut self, key: &[u8], members: &[(i64, &[u8])]) -> anyhow::Result<usize> {
-        let stored_value = self
-            .entry(Bytes::copy_from_slice(key))
-            .or_insert(StoredValue::SortedSet(Default::default(), Default::default()));
+        let stored_value =
+            self.entry(Bytes::copy_from_slice(key))
+                .or_insert(StoredValue::SortedSet(
+                    Default::default(),
+                    Default::default(),
+                ));
         match stored_value {
             StoredValue::SortedSet(tree, scores) => {
                 let mut added = 0;
@@ -101,8 +104,7 @@ impl HMapSortedSetOps for HashMap<Bytes, StoredValue> {
         match self.get(key) {
             None => Ok(None),
             Some(StoredValue::SortedSet(tree, _)) => {
-                let Some((real_start, real_stop)) = normalize_range(tree.len(), start, stop)
-                else {
+                let Some((real_start, real_stop)) = normalize_range(tree.len(), start, stop) else {
                     return Ok(Some((vec![], 0)));
                 };
                 let iter = tree
@@ -126,8 +128,7 @@ impl HMapSortedSetOps for HashMap<Bytes, StoredValue> {
         match self.get(key) {
             None => Ok(None),
             Some(StoredValue::SortedSet(tree, _)) => {
-                let Some((real_start, real_stop)) = normalize_range(tree.len(), start, stop)
-                else {
+                let Some((real_start, real_stop)) = normalize_range(tree.len(), start, stop) else {
                     return Ok(Some((vec![], 0)));
                 };
                 let iter = tree
@@ -201,9 +202,12 @@ impl HMapSortedSetOps for HashMap<Bytes, StoredValue> {
     }
 
     fn zset_incr_by(&mut self, key: &[u8], incr: i64, member: &[u8]) -> anyhow::Result<i64> {
-        let stored_value = self
-            .entry(Bytes::copy_from_slice(key))
-            .or_insert(StoredValue::SortedSet(Default::default(), Default::default()));
+        let stored_value =
+            self.entry(Bytes::copy_from_slice(key))
+                .or_insert(StoredValue::SortedSet(
+                    Default::default(),
+                    Default::default(),
+                ));
         match stored_value {
             StoredValue::SortedSet(tree, scores) => {
                 let member_bytes = Bytes::copy_from_slice(member);

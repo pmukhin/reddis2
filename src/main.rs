@@ -342,14 +342,10 @@ fn main() -> anyhow::Result<()> {
                                         client.ops.write_array(keys.into_iter(), len)?
                                     }
                                 },
-                                Command::Sadd(key, members) => {
-                                    match hmap.set_add(key, members) {
-                                        Err(e) => client.ops.wrong_type(e.to_string())?,
-                                        Ok(added) => {
-                                            client.ops.write_bulk_string(added.to_string())?
-                                        }
-                                    }
-                                }
+                                Command::Sadd(key, members) => match hmap.set_add(key, members) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(added) => client.ops.write_bulk_string(added.to_string())?,
+                                },
                                 Command::Sismember(key, member) => {
                                     match hmap.set_is_member(key, member) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
@@ -391,14 +387,10 @@ fn main() -> anyhow::Result<()> {
                                         client.ops.write_array(members.into_iter(), len)?
                                     }
                                 },
-                                Command::Zadd(key, members) => {
-                                    match hmap.zset_add(key, &members) {
-                                        Err(e) => client.ops.wrong_type(e.to_string())?,
-                                        Ok(added) => {
-                                            client.ops.write_bulk_string(added.to_string())?
-                                        }
-                                    }
-                                }
+                                Command::Zadd(key, members) => match hmap.zset_add(key, &members) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(added) => client.ops.write_bulk_string(added.to_string())?,
+                                },
                                 Command::Zrange(key, start, stop, withscores) => {
                                     match hmap.zset_range(key, start, stop, withscores) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
@@ -417,15 +409,13 @@ fn main() -> anyhow::Result<()> {
                                         }
                                     }
                                 }
-                                Command::Zrank(key, member) => {
-                                    match hmap.zset_rank(key, member) {
-                                        Err(e) => client.ops.wrong_type(e.to_string())?,
-                                        Ok(None) => client.ops.key_not_found()?,
-                                        Ok(Some(rank)) => {
-                                            client.ops.write_bulk_string(rank.to_string())?
-                                        }
+                                Command::Zrank(key, member) => match hmap.zset_rank(key, member) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some(rank)) => {
+                                        client.ops.write_bulk_string(rank.to_string())?
                                     }
-                                }
+                                },
                                 Command::Zrevrank(key, member) => {
                                     match hmap.zset_revrank(key, member) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
