@@ -30,6 +30,7 @@ pub trait HMapSortedSetOps {
         withscores: bool,
     ) -> anyhow::Result<Option<(Vec<Bytes>, usize)>>;
     fn zset_incr_by(&mut self, key: &[u8], incr: i64, member: &[u8]) -> anyhow::Result<i64>;
+    fn zcard(&self, key: &[u8]) -> anyhow::Result<Option<usize>>;
 }
 
 fn normalize_range(len: usize, start: isize, stop: isize) -> Option<(usize, usize)> {
@@ -219,6 +220,16 @@ impl HMapSortedSetOps for HashMap<Bytes, StoredValue> {
                 tree.insert((new_score, member_bytes.clone()));
                 scores.insert(member_bytes, new_score);
                 Ok(new_score)
+            }
+            _ => bail!("stored value isn't a sorted set"),
+        }
+    }
+
+    fn zcard(&self, key: &[u8]) -> anyhow::Result<Option<usize>> {
+        match self.get(key) {
+            None => Ok(None),
+            Some(StoredValue::SortedSet(_, scores)) => {
+                Ok(Some(scores.len()))
             }
             _ => bail!("stored value isn't a sorted set"),
         }

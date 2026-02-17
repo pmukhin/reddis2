@@ -135,7 +135,7 @@ class TestSets:
     def test_sdiff(self, r):
         r.sadd("a:test_sdiff", "Alice", "Bob", "Carol")
         r.sadd("b:test_sdiff", "Bob", "Dave")
-        assert r.sdiff("a", "b") == {"Alice", "Carol"}
+        assert r.sdiff("a:test_sdiff", "b:test_sdiff") == {"Alice", "Carol"}
 
     def test_scard(self, r):
         r.sadd("s:test_scard", "Alice", "Bob", "Carol")
@@ -157,7 +157,7 @@ class TestSortedSets:
 
     def test_zrevrange(self, r):
         r.zadd("z:test_zrevrange", {"Alice": 900, "Bob": 750, "Carol": 870})
-        assert r.zrange("z:test_zrevrange", 0, -1, withscores=True, rev=True) == [
+        assert r.zrange("z:test_zrevrange", 0, -1, withscores=True, desc=True) == [
             ("Alice", 900.0), ("Carol", 870.0), ("Bob", 750.0),
         ]
 

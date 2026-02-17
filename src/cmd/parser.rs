@@ -62,6 +62,7 @@ enum CmdCode {
     Zscore,
     Zrangebyscore,
     Zincrby,
+    Zcard
 }
 
 fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
@@ -102,6 +103,7 @@ fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
         b"ZSCORE" => CmdCode::Zscore,
         b"ZRANGEBYSCORE" => CmdCode::Zrangebyscore,
         b"ZINCRBY" => CmdCode::Zincrby,
+        b"ZCARD" => CmdCode::Zcard,
         b"DEL" => CmdCode::Del,
         b"INCRBY" => CmdCode::IncrBy,
         b"INCR" => CmdCode::Incr,
@@ -427,6 +429,10 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         CmdCode::LLen => {
             let (i, key) = string(i)?;
             Ok((i, Command::LLen(key)))
+        }
+        CmdCode::Zcard => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::Zcard(key)))
         }
     }
 }
