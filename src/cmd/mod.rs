@@ -60,5 +60,5 @@ pub enum Command<'a> {
     Zincrby(&'a [u8], i64, &'a [u8]),
     Zcard(&'a [u8]),
     InfoCmd,
-    LatencyHistogram,
+    LatencyHistogram(Vec<&'a [u8]>),
 }

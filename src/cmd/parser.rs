@@ -420,16 +420,11 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
             Ok((i, Command::Zincrby(key, incr, member)))
         }
         CmdCode::Latency => {
-            // consume subcommand (HISTOGRAM) and any optional command filters
-            let (mut i, _sub) = opt(string)(i)?;
-            loop {
-                let (i2, arg) = opt(string)(i)?;
-                i = i2;
-                if arg.is_none() {
-                    break;
-                }
-            }
-            Ok((i, Command::LatencyHistogram))
+            // consume subcommand (HISTOGRAM)
+            let (i, _sub) = opt(string)(i)?;
+            // collect optional command-name filters
+            let (i, commands) = separated_list0(tag("\r\n"), value)(i)?;
+            Ok((i, Command::LatencyHistogram(commands)))
         }
         CmdCode::Config => Ok((i, Command::Config)),
         CmdCode::Info => {

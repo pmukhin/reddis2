@@ -68,28 +68,39 @@ impl Ops {
     pub fn write_latency_histogram(
         &mut self,
         histograms: &HashMap<CompactString, Histogram>,
+        filter: &[&[u8]],
     ) -> std::io::Result<()> {
-        // Bogus LATENCY HISTOGRAM response in RESP2.
-        // Top-level array: alternating command_name, details for 3 commands → 6 entries.
-        // Each details array: "calls", <int>, "histogram_usec", <bucket array> → 4 entries.
+        // LATENCY HISTOGRAM response in RESP2.
+        // Top-level array: alternating command_name, details.
+        // Each details array: "calls", <int>, "histogram_usec", <bucket array>.
         // Each bucket array: alternating boundary, cumulative_count.
         let mut buf = Vec::with_capacity(512);
 
-        // top-level array: commands.len() * 2
-        buf.extend_from_slice(format!("*{}\r\n", histograms.len() * 2).as_bytes());
+        let filtered: Vec<_> = if filter.is_empty() {
+            histograms.iter().collect()
+        } else {
+            histograms
+                .iter()
+                .filter(|(name, _)| {
+                    filter
+                        .iter()
+                        .any(|f| name.as_bytes().eq_ignore_ascii_case(f))
+                })
+                .collect()
+        };
 
-        for (name, histogram) in histograms {
+        buf.extend_from_slice(format!("*{}\r\n", filtered.len() * 2).as_bytes());
+
+        for (name, histogram) in &filtered {
             let calls = histogram.iter().count();
             let buckets = histogram.iter().count();
-            // command name
             buf.extend_from_slice(format!("${}\r\n{}\r\n", name.len(), name).as_bytes());
-            // details array: 4 entries (calls key, calls val, histogram_usec key, histogram_usec val)
             buf.extend_from_slice(b"*4\r\n");
             buf.extend_from_slice(b"$5\r\ncalls\r\n");
             buf.extend_from_slice(format!(":{}\r\n", calls).as_bytes());
             buf.extend_from_slice(b"$14\r\nhistogram_usec\r\n");
             buf.extend_from_slice(format!("*{}\r\n", buckets * 2).as_bytes());
-            for bucket in histogram {
+            for bucket in *histogram {
                 buf.extend_from_slice(
                     format!(":{}\r\n:{}\r\n", bucket.end(), bucket.count()).as_bytes(),
                 );

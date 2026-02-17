@@ -108,7 +108,7 @@ fn main() -> anyhow::Result<()> {
                     let mut to_return = Vec::<u8>::new();
 
                     let cmd_instant = Instant::now();
-                    let mut current_command = CompactString::default();
+                    let current_command: CompactString;
 
                     let clients_len = clients.len();
                     let client = clients
@@ -456,34 +456,49 @@ fn main() -> anyhow::Result<()> {
                                     };
                                     current_command = CompactString::new("sinter")
                                 }
-                                Command::Sunion(keys) => match hmap.set_union(&keys) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok((values, len)) => {
-                                        client.ops.write_array(values.into_iter(), len)?
-                                    }
-                                },
-                                Command::Sdiff(keys) => match hmap.set_diff(&keys) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok((values, len)) => {
-                                        client.ops.write_array(values.into_iter(), len)?
-                                    }
-                                },
-                                Command::Scard(key) => match hmap.set_card(key) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(len)) => client.ops.write_integer(len)?,
-                                },
-                                Command::Smembers(key) => match hmap.set_members(key) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some((members, len))) => {
-                                        client.ops.write_array(members.into_iter(), len)?
-                                    }
-                                },
-                                Command::Zadd(key, members) => match hmap.zset_add(key, &members) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(added) => client.ops.write_integer(added)?,
-                                },
+                                Command::Sunion(keys) => {
+                                    match hmap.set_union(&keys) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok((values, len)) => {
+                                            client.ops.write_array(values.into_iter(), len)?
+                                        }
+                                    };
+                                    current_command = CompactString::new("sunion");
+                                }
+                                Command::Sdiff(keys) => {
+                                    match hmap.set_diff(&keys) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok((values, len)) => {
+                                            client.ops.write_array(values.into_iter(), len)?
+                                        }
+                                    };
+                                    current_command = CompactString::new("sdiff");
+                                }
+                                Command::Scard(key) => {
+                                    match hmap.set_card(key) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(len)) => client.ops.write_integer(len)?,
+                                    };
+                                    current_command = CompactString::new("scard");
+                                }
+                                Command::Smembers(key) => {
+                                    match hmap.set_members(key) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some((members, len))) => {
+                                            client.ops.write_array(members.into_iter(), len)?
+                                        }
+                                    };
+                                    current_command = CompactString::new("smembers");
+                                }
+                                Command::Zadd(key, members) => {
+                                    match hmap.zset_add(key, &members) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(added) => client.ops.write_integer(added)?,
+                                    };
+                                    current_command = CompactString::new("zadd");
+                                }
                                 Command::Zrange(key, start, stop, withscores) => {
                                     match hmap.zset_range(key, start, stop, withscores) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
@@ -491,7 +506,8 @@ fn main() -> anyhow::Result<()> {
                                         Ok(Some((values, len))) => {
                                             client.ops.write_array(values.iter(), len)?
                                         }
-                                    }
+                                    };
+                                    current_command = CompactString::new("zrange");
                                 }
                                 Command::Zrevrange(key, start, stop, withscores) => {
                                     match hmap.zset_revrange(key, start, stop, withscores) {
@@ -500,19 +516,24 @@ fn main() -> anyhow::Result<()> {
                                         Ok(Some((values, len))) => {
                                             client.ops.write_array(values.iter(), len)?
                                         }
-                                    }
+                                    };
+                                    current_command = CompactString::new("zrevrange");
                                 }
-                                Command::Zrank(key, member) => match hmap.zset_rank(key, member) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(rank)) => client.ops.write_integer(rank)?,
-                                },
+                                Command::Zrank(key, member) => {
+                                    match hmap.zset_rank(key, member) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(rank)) => client.ops.write_integer(rank)?,
+                                    };
+                                    current_command = CompactString::new("zrank");
+                                }
                                 Command::Zrevrank(key, member) => {
                                     match hmap.zset_revrank(key, member) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(None) => client.ops.key_not_found()?,
                                         Ok(Some(rank)) => client.ops.write_integer(rank)?,
-                                    }
+                                    };
+                                    current_command = CompactString::new("zrevrank");
                                 }
                                 Command::Zscore(key, member) => {
                                     match hmap.zset_score(key, member) {
@@ -521,7 +542,8 @@ fn main() -> anyhow::Result<()> {
                                         Ok(Some(score)) => {
                                             client.ops.write_bulk_string(score.to_string())?
                                         }
-                                    }
+                                    };
+                                    current_command = CompactString::new("zscore");
                                 }
                                 Command::Zrangebyscore(key, min, max, withscores) => {
                                     match hmap.zset_range_by_score(key, min, max, withscores) {
@@ -530,7 +552,8 @@ fn main() -> anyhow::Result<()> {
                                         Ok(Some((values, len))) => {
                                             client.ops.write_array(values.iter(), len)?
                                         }
-                                    }
+                                    };
+                                    current_command = CompactString::new("zrangebyscore");
                                 }
                                 Command::Zincrby(key, incr, member) => {
                                     match hmap.zset_incr_by(key, incr, member) {
@@ -538,13 +561,17 @@ fn main() -> anyhow::Result<()> {
                                         Ok(score) => {
                                             client.ops.write_bulk_string(score.to_string())?
                                         }
-                                    }
+                                    };
+                                    current_command = CompactString::new("zincrby");
                                 }
-                                Command::Zcard(key) => match hmap.zcard(key) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(value)) => client.ops.write_integer(value)?,
-                                },
+                                Command::Zcard(key) => {
+                                    match hmap.zcard(key) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(value)) => client.ops.write_integer(value)?,
+                                    };
+                                    current_command = CompactString::new("zcard");
+                                }
                                 Command::InfoCmd => {
                                     let (alloc, _) = memory_usage()?;
                                     let alloc_readable =
@@ -602,9 +629,13 @@ fn main() -> anyhow::Result<()> {
                                         hmap.len(),
                                     );
                                     client.ops.write_bulk_string(&info)?;
+                                    current_command = CompactString::new("info");
                                 }
-                                Command::LatencyHistogram => {
-                                    client.ops.write_latency_histogram(&latency_histograms)?;
+                                Command::LatencyHistogram(commands) => {
+                                    client
+                                        .ops
+                                        .write_latency_histogram(&latency_histograms, &commands)?;
+                                    current_command = CompactString::new("latency");
                                 }
                             }
                             client.read_buf.clear();
