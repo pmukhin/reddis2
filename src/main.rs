@@ -25,7 +25,7 @@ use mio::net::TcpListener;
 use mio::{Events, Interest, Poll, Token};
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
-use tracing::info;
+use tracing::{info, trace, warn};
 
 const SERVER: Token = Token(0);
 
@@ -70,7 +70,7 @@ fn main() -> anyhow::Result<()> {
                     let token = Token(next_token_id);
                     next_token_id += 1;
 
-                    info!("[{token:?}] Connected: {addr}");
+                    trace!("[{token:?}] Connected: {addr}");
 
                     poll.registry().register(
                         &mut stream,
@@ -129,14 +129,8 @@ fn main() -> anyhow::Result<()> {
                                     None => client.ops.key_not_found()?,
                                     Some(StoredValue::Plain(bytes)) => {
                                         client.ops.write_bulk_string(bytes)?;
-                                        info!(
-                                            "[{token:?}] GET executed successfully with key {}",
-                                            String::from_utf8_lossy(key)
-                                        );
                                     }
-                                    Some(value) => {
-                                        panic!("expected plain value, got {value:?}")
-                                    }
+                                    Some(_) => client.ops.wrong_type("expected STRING")?
                                 },
                                 Command::Set(key, value, maybe_ttl) => {
                                     hmap.insert_alloc(
@@ -198,11 +192,11 @@ fn main() -> anyhow::Result<()> {
                                 Command::Config => {
                                     todo!("not implemented: Command::Config")
                                 }
-                                Command::Lpush(key, values) => match hmap.append(key, values) {
+                                Command::Lpush(key, values) => match hmap.prepend(key, values) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(values_len) => client.ops.write_integer(values_len)?,
                                 },
-                                Command::Rpush(key, values) => match hmap.prepend(key, values) {
+                                Command::Rpush(key, values) => match hmap.append(key, values) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(values_len) => client.ops.write_integer(values_len)?,
                                 },
@@ -265,13 +259,29 @@ fn main() -> anyhow::Result<()> {
                                 Command::Lrange(key, start, end) => match hmap.get(key) {
                                     None => client.ops.key_not_found()?,
                                     Some(StoredValue::List(ll)) => {
-                                        let real_start = (ll.len() as isize - start) as usize;
-                                        let real_end = (ll.len() as isize - end) as usize;
-                                        let vec = ll
-                                            .iter()
-                                            .skip(real_start)
-                                            .take(real_end - real_start)
-                                            .collect::<Vec<_>>();
+                                        let start = if start < 0 {
+                                            ll.len() as isize - start
+                                        } else { start };
+                                        let end = if end < 0 {
+                                            ll.len() as isize - end
+                                        } else {end};
+                                        // @todo optimise this...
+                                        info!("lpop: key = {}, start = {}, end = {}, ll={:?}", String::from_utf8_lossy(key), start, end, &ll);
+
+                                        let vec: Vec<_> = if start <= end {
+                                            ll
+                                                .iter()
+                                                .skip(start as usize)
+                                                .take(end as usize + 1)
+                                                .collect()
+                                        } else {
+                                            ll
+                                                .iter()
+                                                .skip(end as usize)
+                                                .take(start as usize + 1)
+                                                .rev()
+                                                .collect()
+                                        };
                                         client.ops.write_array(vec.iter(), vec.len())?;
                                     }
                                     _ => client.ops.wrong_type("stored value isn't a list")?,
@@ -441,7 +451,7 @@ fn main() -> anyhow::Result<()> {
                                 }
                             }
                             client.read_buf.clear();
-                            info!("[{token:?}] command is executed, buffer cleared");
+                            trace!("[{token:?}] command is executed, buffer cleared");
                             break;
                         }
                     }
@@ -449,12 +459,12 @@ fn main() -> anyhow::Result<()> {
                     if event.is_writable() && !to_return.is_empty() {
                         match client.ops.ok() {
                             Ok(()) => {
-                                println!("[{token:?}] Echoed {} bytes", to_return.len());
+                                trace!("[{token:?}] Echoed {} bytes", to_return.len());
                                 to_return.clear();
                             }
                             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                             Err(e) => {
-                                eprintln!("[{token:?}] Write error: {e}");
+                                warn!("[{token:?}] Write error: {e}");
                                 closed = true;
                             }
                         }
@@ -463,7 +473,7 @@ fn main() -> anyhow::Result<()> {
                     if closed && let Some(client) = clients.remove(&token) {
                         poll.registry()
                             .deregister(&mut client.ops.unwrap_stream())?;
-                        println!("[{token:?}] Disconnected");
+                        trace!("[{token:?}] disconnected");
                     }
                 }
             }

@@ -2,6 +2,7 @@ use crate::stored_value::StoredValue;
 use anyhow::bail;
 use bytes::Bytes;
 use std::collections::{HashMap, LinkedList};
+use tracing::info;
 
 pub enum Popped {
     None,
@@ -29,7 +30,7 @@ impl HMapListOps for HashMap<Bytes, StoredValue> {
             StoredValue::List(l) => {
                 for value in values {
                     let value = value.to_vec().into_boxed_slice();
-                    l.push_front(Bytes::from(value));
+                    l.push_back(Bytes::from(value));
                 }
                 Ok(values_len)
             }
@@ -45,8 +46,7 @@ impl HMapListOps for HashMap<Bytes, StoredValue> {
         match entry {
             StoredValue::List(l) => {
                 for value in values {
-                    let value = value.to_vec().into_boxed_slice();
-                    l.push_back(Bytes::from(value));
+                    l.push_front(Bytes::copy_from_slice(value));
                 }
                 Ok(values_len)
             }
@@ -60,13 +60,10 @@ impl HMapListOps for HashMap<Bytes, StoredValue> {
             Some(StoredValue::List(ll)) => ll,
             _ => bail!("cannot LPOP from a value that is not a LIST"),
         };
-
         let is_multi_count = n.is_some();
         let mut times_to_pop = n.unwrap_or(1);
         let mut to_ret = Vec::new();
-        while let Some(v) = ll.pop_front()
-            && times_to_pop > 0
-        {
+        while times_to_pop > 0 && let Some(v) = ll.pop_front() {
             to_ret.push(v.clone());
             times_to_pop -= 1;
         }
@@ -89,8 +86,7 @@ impl HMapListOps for HashMap<Bytes, StoredValue> {
         let is_multi_count = n.is_some();
         let mut times_to_pop = n.unwrap_or(1);
         let mut to_ret = Vec::new();
-        while let Some(v) = ll.pop_back()
-            && times_to_pop > 0
+        while times_to_pop > 0 && let Some(v) = ll.pop_back()
         {
             to_ret.push(v.clone());
             times_to_pop -= 1;

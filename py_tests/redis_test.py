@@ -51,146 +51,147 @@ class TestStrings:
 
 class TestLists:
     def test_rpush_and_lrange(self, r):
-        r.rpush("q", "a", "b", "c")
-        assert r.lrange("q", 0, -1) == ["a", "b", "c"]
+        r.rpush("q:test_rpush_and_lrange", "a", "b", "c")
+        assert r.llen("q:test_rpush_and_lrange") == 3
+        assert r.lrange("q:test_rpush_and_lrange", 0, -1) == ["a", "b", "c"]
 
     def test_lpush(self, r):
-        r.rpush("q", "a", "b")
-        r.lpush("q", "z")
-        assert r.lrange("q", 0, -1) == ["z", "a", "b"]
+        r.rpush("q:test_lpush", "a", "b")
+        r.lpush("q:test_lpush", "z")
+        assert r.lrange("q:test_lpush", 0, -1) == ["z", "a", "b"]
 
     def test_lpop(self, r):
-        r.rpush("q", "a", "b", "c")
-        assert r.lpop("q") == "a"
-        assert r.lrange("q", 0, -1) == ["b", "c"]
+        assert r.rpush("q:test_lpop", "a", "b", "c") == 3
+        assert r.lpop("q:test_lpop") == "a"
+        assert r.lrange("q:test_lpop", 0, -1) == ["b", "c"]
 
     def test_rpop(self, r):
-        r.rpush("q", "a", "b", "c")
-        assert r.rpop("q") == "c"
-        assert r.lrange("q", 0, -1) == ["a", "b"]
+        r.rpush("q:test_rpop", "a", "b", "c")
+        assert r.rpop("q:test_rpop") == "c"
+        assert r.lrange("q:test_rpop", 0, -1) == ["a", "b"]
 
     def test_llen(self, r):
-        r.rpush("q", "a", "b", "c")
-        assert r.llen("q") == 3
+        r.rpush("q:test_llen", "a", "b", "c")
+        assert r.llen("q:test_llen") == 3
 
 
 # ── Hashes ────────────────────────────────────────────────────────────────────
 
 class TestHashes:
     def test_hset_and_hget(self, r):
-        r.hset("h", "name", "Alice")
-        assert r.hget("h", "name") == "Alice"
+        r.hset("h:test_hset_and_hget", "name", "Alice")
+        assert r.hget("h:test_hset_and_hget", "name") == "Alice"
 
     def test_hset_mapping_and_hgetall(self, r):
-        r.hset("h", mapping={"name": "Alice", "email": "a@b.com", "age": "30"})
-        assert r.hgetall("h") == {"name": "Alice", "email": "a@b.com", "age": "30"}
+        r.hset("h:test_hset_mapping_and_hgetall", mapping={"name": "Alice", "email": "a@b.com", "age": "30"})
+        assert r.hgetall("h:test_hset_mapping_and_hgetall") == {"name": "Alice", "email": "a@b.com", "age": "30"}
 
     def test_hmget(self, r):
-        r.hset("h", mapping={"a": "1", "b": "2", "c": "3"})
-        assert r.hmget("h", "a", "c") == ["1", "3"]
+        r.hset("h:test_hmget", mapping={"a": "1", "b": "2", "c": "3"})
+        assert r.hmget("h:test_hmget", "a", "c") == ["1", "3"]
 
     def test_hincrby(self, r):
-        r.hset("h", "score", "100")
-        r.hincrby("h", "score", 50)
-        assert r.hget("h", "score") == "150"
+        r.hset("h:test_hincrby", "score", "100")
+        r.hincrby("h:test_hincrby", "score", 50)
+        assert r.hget("h:test_hincrby", "score") == "150"
 
     def test_hincrby_missing_field(self, r):
-        r.hset("h", "other", "x")
-        r.hincrby("h", "score", 10)
-        assert r.hget("h", "score") == "10"
+        r.hset("h:test_hincrby_missing_field", "other", "x")
+        r.hincrby("h:test_hincrby_missing_field", "score", 10)
+        assert r.hget("h:test_hincrby_missing_field", "score") == "10"
 
     def test_hexists(self, r):
-        r.hset("h", "name", "Alice")
-        assert r.hexists("h", "name") is True
-        assert r.hexists("h", "missing") is False
+        r.hset("h:test_hexists", "name", "Alice")
+        assert r.hexists("h:test_hexists", "name") is True
+        assert r.hexists("h:test_hexists", "missing") is False
 
     def test_hkeys(self, r):
-        r.hset("h", mapping={"a": "1", "b": "2", "c": "3"})
-        assert set(r.hkeys("h")) == {"a", "b", "c"}
+        r.hset("h:test_hkeys", mapping={"a": "1", "b": "2", "c": "3"})
+        assert set(r.hkeys("h:test_hkeys")) == {"a", "b", "c"}
 
 
 # ── Sets ──────────────────────────────────────────────────────────────────────
 
 class TestSets:
     def test_sadd_and_smembers(self, r):
-        r.sadd("s", "Alice", "Bob", "Carol")
-        assert r.smembers("s") == {"Alice", "Bob", "Carol"}
+        r.sadd("s:test_sadd_and_smembers", "Alice", "Bob", "Carol")
+        assert r.smembers("s:test_sadd_and_smembers") == {"Alice", "Bob", "Carol"}
 
     def test_sismember(self, r):
-        r.sadd("s", "Alice", "Bob")
-        assert r.sismember("s", "Alice") is True
-        assert r.sismember("s", "Dave") is False
+        r.sadd("s:test_sadd_and_smembers", "Alice", "Bob")
+        assert r.sismember("s:test_sadd_and_smembers", "Alice") is 1
+        assert r.sismember("s:test_sadd_and_smembers", "Dave") is 0
 
     def test_sinter(self, r):
-        r.sadd("a", "Alice", "Bob", "Carol")
-        r.sadd("b", "Bob", "Dave")
-        assert r.sinter("a", "b") == {"Bob"}
+        r.sadd("a:test_sinter", "Alice", "Bob", "Carol")
+        r.sadd("b:test_sinter", "Bob", "Dave")
+        assert r.sinter("a:test_sinter", "b:test_sinter") == {"Bob"}
 
     def test_sunion(self, r):
-        r.sadd("a", "Alice", "Bob")
-        r.sadd("b", "Bob", "Carol")
-        assert r.sunion("a", "b") == {"Alice", "Bob", "Carol"}
+        r.sadd("a:test_sunion", "Alice", "Bob")
+        r.sadd("b:test_sunion", "Bob", "Carol")
+        assert r.sunion("a:test_sunion", "b:test_sunion") == {"Alice", "Bob", "Carol"}
 
     def test_sdiff(self, r):
-        r.sadd("a", "Alice", "Bob", "Carol")
-        r.sadd("b", "Bob", "Dave")
+        r.sadd("a:test_sdiff", "Alice", "Bob", "Carol")
+        r.sadd("b:test_sdiff", "Bob", "Dave")
         assert r.sdiff("a", "b") == {"Alice", "Carol"}
 
     def test_scard(self, r):
-        r.sadd("s", "Alice", "Bob", "Carol")
-        assert r.scard("s") == 3
+        r.sadd("s:test_scard", "Alice", "Bob", "Carol")
+        assert r.scard("s:test_scard") == 3
 
 
 # ── Sorted Sets ───────────────────────────────────────────────────────────────
 
 class TestSortedSets:
     def test_zadd_and_zrange(self, r):
-        r.zadd("z", {"Alice": 900, "Bob": 750, "Carol": 870, "Dave": 600})
-        assert r.zrange("z", 0, -1, withscores=True) == [
+        r.zadd("z:test_zadd_and_zrange", {"Alice": 900, "Bob": 750, "Carol": 870, "Dave": 600})
+        assert r.zrange("z:test_zadd_and_zrange", 0, -1, withscores=True) == [
             ("Dave", 600.0), ("Bob", 750.0), ("Carol", 870.0), ("Alice", 900.0),
         ]
 
     def test_zrange_without_scores(self, r):
-        r.zadd("z", {"Alice": 900, "Bob": 750, "Carol": 870})
-        assert r.zrange("z", 0, -1) == ["Bob", "Carol", "Alice"]
+        r.zadd("z:test_zrange_without_scores", {"Alice": 900, "Bob": 750, "Carol": 870})
+        assert r.zrange("z:test_zrange_without_scores", 0, -1) == ["Bob", "Carol", "Alice"]
 
     def test_zrevrange(self, r):
-        r.zadd("z", {"Alice": 900, "Bob": 750, "Carol": 870})
-        assert r.zrange("z", 0, -1, withscores=True, rev=True) == [
+        r.zadd("z:test_zrevrange", {"Alice": 900, "Bob": 750, "Carol": 870})
+        assert r.zrange("z:test_zrevrange", 0, -1, withscores=True, rev=True) == [
             ("Alice", 900.0), ("Carol", 870.0), ("Bob", 750.0),
         ]
 
     def test_zrank(self, r):
-        r.zadd("z", {"Alice": 900, "Bob": 750, "Dave": 600})
-        assert r.zrank("z", "Dave") == 0
-        assert r.zrank("z", "Alice") == 2
+        r.zadd("z:test_zrank", {"Alice": 900, "Bob": 750, "Dave": 600})
+        assert r.zrank("z:test_zrank", "Dave") == 0
+        assert r.zrank("z:test_zrank", "Alice") == 2
 
     def test_zrevrank(self, r):
-        r.zadd("z", {"Alice": 900, "Bob": 750, "Dave": 600})
-        assert r.zrevrank("z", "Alice") == 0
-        assert r.zrevrank("z", "Dave") == 2
+        r.zadd("z:test_zrevrank", {"Alice": 900, "Bob": 750, "Dave": 600})
+        assert r.zrevrank("z:test_zrevrank", "Alice") == 0
+        assert r.zrevrank("z:test_zrevrank", "Dave") == 2
 
     def test_zscore(self, r):
-        r.zadd("z", {"Alice": 900, "Carol": 870})
-        assert r.zscore("z", "Carol") == 870.0
-        assert r.zscore("z", "missing") is None
+        r.zadd("z:test_zscore", {"Alice": 900, "Carol": 870})
+        assert r.zscore("z:test_zscore", "Carol") == 870.0
+        assert r.zscore("z:test_zscore", "missing") is None
 
     def test_zrangebyscore(self, r):
-        r.zadd("z", {"Alice": 900, "Bob": 750, "Carol": 870, "Dave": 600})
-        assert r.zrangebyscore("z", 700, 900, withscores=True) == [
+        r.zadd("z:test_zrangebyscore", {"Alice": 900, "Bob": 750, "Carol": 870, "Dave": 600})
+        assert r.zrangebyscore("z:test_zrangebyscore", 700, 900, withscores=True) == [
             ("Bob", 750.0), ("Carol", 870.0), ("Alice", 900.0),
         ]
 
     def test_zincrby(self, r):
-        r.zadd("z", {"Dave": 600})
-        r.zincrby("z", 200, "Dave")
-        assert r.zscore("z", "Dave") == 800.0
+        r.zadd("z:test_zincrby", {"Dave": 600})
+        r.zincrby("z:test_zincrby", 200, "Dave")
+        assert r.zscore("z:test_zincrby", "Dave") == 800.0
 
     def test_zadd_updates_existing(self, r):
-        r.zadd("z", {"Alice": 100})
-        r.zadd("z", {"Alice": 200})
-        assert r.zscore("z", "Alice") == 200.0
-        assert r.zcard("z") == 1
+        r.zadd("z:test_zadd_updates_existing", {"Alice": 100})
+        r.zadd("z:test_zadd_updates_existing", {"Alice": 200})
+        assert r.zscore("z:test_zadd_updates_existing", "Alice") == 200.0
+        assert r.zcard("z:test_zadd_updates_existing") == 1
 
 
 # ── Key Utilities ─────────────────────────────────────────────────────────────
