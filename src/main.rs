@@ -184,10 +184,10 @@ fn main() -> anyhow::Result<()> {
                                     client.ops.ok()?;
                                 }
                                 Command::Docs => {
-                                    todo!("not implemented: Command::CommandDocs")
+                                    client.ops.write_array(std::iter::empty::<&[u8]>(), 0)?;
                                 }
                                 Command::DbSize => {
-                                    todo!("not implemented: Command::DbSize")
+                                    client.ops.write_integer(hmap.keys().len())?;
                                 }
                                 Command::Config => {
                                     client.ops.write_array(std::iter::empty::<&[u8]>(), 0)?;

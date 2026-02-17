@@ -263,6 +263,12 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         CmdCode::Hset => {
             let (i, key) = string(i)?;
             let (i, fields_and_values) = separated_list0(tag("\r\n"), value)(i)?;
+            if fields_and_values.len() % 2 != 0 {
+                return Err(nom::Err::Error(ParseFailure(format!(
+                    "Hset unexpected number of args: {}, should be divisible by 2",
+                    fields_and_values.len()
+                ))));
+            }
             Ok((i, Command::HMset(key, fields_and_values)))
         }
         CmdCode::HMget => {
@@ -273,6 +279,12 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         CmdCode::HMSet => {
             let (i, key) = string(i)?;
             let (i, fields_and_values) = separated_list0(tag("\r\n"), string)(i)?;
+            if fields_and_values.len() % 2 != 0 {
+                return Err(nom::Err::Error(ParseFailure(format!(
+                    "Hset unexpected number of args: {}, should be divisible by 2",
+                    fields_and_values.len()
+                ))));
+            }
             Ok((i, Command::HMset(key, fields_and_values)))
         }
         CmdCode::HgetAll => {
