@@ -582,7 +582,7 @@ mod tests {
             parse(raw_cmd).unwrap(),
             Command::Lpush(
                 "aaa".as_bytes(),
-                vec!["1", "2", "3", "4", "5"]
+                ["1", "2", "3", "4", "5"]
                     .iter()
                     .map(|v| v.as_bytes())
                     .collect(),
@@ -599,7 +599,7 @@ mod tests {
             parse(raw_cmd).unwrap(),
             Command::Rpush(
                 "aaa".as_bytes(),
-                vec!["1", "2", "3", "4", "5"]
+                ["1", "2", "3", "4", "5"]
                     .iter()
                     .map(|v| v.as_bytes())
                     .collect(),
@@ -616,7 +616,7 @@ mod tests {
             parse(raw_cmd).unwrap(),
             Command::LpushX(
                 "aaa".as_bytes(),
-                vec!["1", "2", "3", "4", "5"]
+                ["1", "2", "3", "4", "5"]
                     .iter()
                     .map(|v| v.as_bytes())
                     .collect(),
@@ -633,7 +633,7 @@ mod tests {
             parse(raw_cmd).unwrap(),
             Command::RpushX(
                 "aaa".as_bytes(),
-                vec!["1", "2", "3", "4", "5"]
+                ["1", "2", "3", "4", "5"]
                     .iter()
                     .map(|v| v.as_bytes())
                     .collect(),
