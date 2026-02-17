@@ -1,4 +1,5 @@
 mod cmd;
+mod dict_ops;
 mod err;
 mod hmap_ops;
 mod list_ops;
@@ -7,6 +8,7 @@ mod ops;
 mod stored_value;
 
 use crate::cmd::Command;
+use crate::dict_ops::HMapDictOps;
 use crate::err::RedisError;
 use hmap_ops::HMapOps;
 
@@ -15,7 +17,6 @@ use crate::numerical_ops::HMapNumericalOps;
 use crate::stored_value::StoredValue;
 use anyhow::Context;
 use bytes::Bytes;
-use itertools::Itertools;
 use mio::net::TcpListener;
 use mio::{Events, Interest, Poll, Token};
 use std::collections::{BTreeMap, HashMap};
@@ -280,79 +281,36 @@ fn main() -> anyhow::Result<()> {
                                     }
                                     _ => client.ops.wrong_type("stored value isn't a list")?,
                                 },
-                                Command::Hget(key, field) => match hmap.get(key) {
-                                    None => client.ops.key_not_found()?,
-                                    Some(StoredValue::Dict(dict)) => match dict.get(field) {
-                                        None => client.ops.key_not_found()?,
-                                        Some(value) => client.ops.write_bulk_string(value)?,
-                                    },
-                                    _ => client.ops.wrong_type("stored value isn't a dict")?,
+                                Command::Hget(key, field) => match hmap.dict_get(key, field) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some(value)) => client.ops.write_bulk_string(value)?,
                                 },
-                                Command::Hset(key, field, value) => match hmap.get_mut(key) {
-                                    None => {
-                                        let mut dict = HashMap::new();
-                                        dict.insert(
-                                            Bytes::copy_from_slice(field),
-                                            Bytes::copy_from_slice(value),
-                                        );
-                                        hmap.insert(
-                                            Bytes::copy_from_slice(key),
-                                            StoredValue::Dict(dict),
-                                        );
-                                        client.ops.ok()?;
-                                    }
-                                    Some(StoredValue::Dict(dict)) => {
-                                        dict.insert(
-                                            Bytes::copy_from_slice(field),
-                                            Bytes::copy_from_slice(value),
-                                        );
-                                        client.ops.ok()?;
-                                    }
-                                    _ => client.ops.wrong_type("stored value isn't a dict")?,
-                                },
-                                Command::HMget(key, fields) => match hmap.get(key) {
-                                    None => client.ops.key_not_found()?,
-                                    Some(StoredValue::Dict(dict)) => {
-                                        let result = fields.iter().filter_map(|f| dict.get(*f));
-                                        client.ops.write_array(result, dict.keys().len())?;
-                                    }
-                                    _ => client.ops.wrong_type("stored value isn't a dict")?,
-                                },
-                                Command::HMset(key, fields_and_values) => {
-                                    let stored_value = hmap
-                                        .entry(Bytes::copy_from_slice(key))
-                                        .or_insert(StoredValue::Dict(Default::default()));
-                                    match stored_value {
-                                        StoredValue::Dict(dict) => {
-                                            fields_and_values
-                                                .iter()
-                                                .chunks(2)
-                                                .into_iter()
-                                                .for_each(|mut chunk| {
-                                                    let field =
-                                                        chunk.next().expect("HMSET is ill-formed");
-                                                    let value =
-                                                        chunk.next().expect("HMSET is ill-formed");
-                                                    dict.insert(
-                                                        Bytes::copy_from_slice(field),
-                                                        Bytes::copy_from_slice(value),
-                                                    );
-                                                });
-                                            client.ops.ok()?;
-                                        }
-                                        _ => client.ops.wrong_type("stored value isn't a dict")?,
+                                Command::Hset(key, field, value) => {
+                                    match hmap.dict_set(key, field, value) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(()) => client.ops.ok()?,
                                     }
                                 }
-                                Command::HgetAll(key) => match hmap.get(key) {
-                                    None => client.ops.key_not_found()?,
-                                    Some(StoredValue::Dict(dict)) => {
-                                        let fields_and_values =
-                                            dict.iter().flat_map(|(k, v)| [k, v]);
-                                        client
-                                            .ops
-                                            .write_array(fields_and_values, dict.keys().len())?;
+                                Command::HMget(key, fields) => match hmap.dict_mget(key, &fields) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some((values, len))) => {
+                                        client.ops.write_array(values.into_iter(), len)?
                                     }
-                                    _ => client.ops.wrong_type("stored value isn't a dict")?,
+                                },
+                                Command::HMset(key, fields_and_values) => {
+                                    match hmap.dict_mset(key, &fields_and_values) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(()) => client.ops.ok()?,
+                                    }
+                                }
+                                Command::HgetAll(key) => match hmap.dict_get_all(key) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some((values, len))) => {
+                                        client.ops.write_array(values.into_iter(), len)?
+                                    }
                                 },
                             }
                             client.read_buf.clear();
