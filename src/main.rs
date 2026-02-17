@@ -39,6 +39,53 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 const SERVER: Token = Token(0);
 
+mod cmd_name {
+    use compact_str::CompactString;
+
+    pub const GET: CompactString = CompactString::const_new("get");
+    pub const SET: CompactString = CompactString::const_new("set");
+    pub const PING: CompactString = CompactString::const_new("ping");
+    pub const FLUSHDB: CompactString = CompactString::const_new("flushdb");
+    pub const DOCS: CompactString = CompactString::const_new("docs");
+    pub const DBSIZE: CompactString = CompactString::const_new("dbsize");
+    pub const CONFIG: CompactString = CompactString::const_new("config");
+    pub const LPUSH: CompactString = CompactString::const_new("lpush");
+    pub const RPUSH: CompactString = CompactString::const_new("rpush");
+    pub const LPOP: CompactString = CompactString::const_new("lpop");
+    pub const RPOP: CompactString = CompactString::const_new("rpop");
+    pub const DEL: CompactString = CompactString::const_new("del");
+    pub const INCR: CompactString = CompactString::const_new("incr");
+    pub const CLIENT: CompactString = CompactString::const_new("client");
+    pub const TTL: CompactString = CompactString::const_new("ttl");
+    pub const LRANGE: CompactString = CompactString::const_new("lrange");
+    pub const LLEN: CompactString = CompactString::const_new("llen");
+    pub const HGET: CompactString = CompactString::const_new("hget");
+    pub const HMGET: CompactString = CompactString::const_new("hmget");
+    pub const HMSET: CompactString = CompactString::const_new("hmset");
+    pub const HINCRBY: CompactString = CompactString::const_new("hincrby");
+    pub const EXISTS: CompactString = CompactString::const_new("exists");
+    pub const HEXISTS: CompactString = CompactString::const_new("hexists");
+    pub const HKEYS: CompactString = CompactString::const_new("hkeys");
+    pub const SADD: CompactString = CompactString::const_new("sadd");
+    pub const SISMEMBER: CompactString = CompactString::const_new("sismember");
+    pub const SINTER: CompactString = CompactString::const_new("sinter");
+    pub const SUNION: CompactString = CompactString::const_new("sunion");
+    pub const SDIFF: CompactString = CompactString::const_new("sdiff");
+    pub const SCARD: CompactString = CompactString::const_new("scard");
+    pub const SMEMBERS: CompactString = CompactString::const_new("smembers");
+    pub const ZADD: CompactString = CompactString::const_new("zadd");
+    pub const ZRANGE: CompactString = CompactString::const_new("zrange");
+    pub const ZREVRANGE: CompactString = CompactString::const_new("zrevrange");
+    pub const ZRANK: CompactString = CompactString::const_new("zrank");
+    pub const ZREVRANK: CompactString = CompactString::const_new("zrevrank");
+    pub const ZSCORE: CompactString = CompactString::const_new("zscore");
+    pub const ZRANGEBYSCORE: CompactString = CompactString::const_new("zrangebyscore");
+    pub const ZINCRBY: CompactString = CompactString::const_new("zincrby");
+    pub const ZCARD: CompactString = CompactString::const_new("zcard");
+    pub const INFO: CompactString = CompactString::const_new("info");
+    pub const LATENCY: CompactString = CompactString::const_new("latency");
+}
+
 struct Client {
     ops: ops::Ops,
     read_buf: Vec<u8>,
@@ -151,7 +198,7 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         Some(_) => client.ops.wrong_type("expected STRING")?,
                                     };
-                                    current_command = CompactString::new("get");
+                                    current_command = cmd_name::GET;
                                 }
                                 Command::Set(key, value, maybe_ttl) => {
                                     hmap.insert_alloc(
@@ -160,17 +207,17 @@ fn main() -> anyhow::Result<()> {
                                         maybe_ttl.map(|dur| Instant::now() + dur),
                                     );
                                     client.ops.ok()?;
-                                    current_command = CompactString::new("set");
+                                    current_command = cmd_name::SET;
                                 }
                                 Command::SetNx(key, value) => {
                                     hmap.set_if_not_exist(key, value);
                                     client.ops.ok()?;
-                                    current_command = CompactString::new("set");
+                                    current_command = cmd_name::SET;
                                 }
                                 Command::SetXx(key, value) => {
                                     hmap.update_if_exist(key, value);
                                     client.ops.ok()?;
-                                    current_command = CompactString::new("set");
+                                    current_command = cmd_name::SET;
                                 }
                                 Command::SetAndGet(key, value) => {
                                     match hmap.insert_alloc(key, value, None) {
@@ -185,7 +232,7 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         _ => client.ops.wrong_type("expected STRING")?,
                                     }
-                                    current_command = CompactString::new("set");
+                                    current_command = cmd_name::SET;
                                 }
                                 Command::SetKeepTtl(key, value) => {
                                     match hmap.get_mut(key) {
@@ -203,41 +250,41 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         _ => client.ops.wrong_type("expected STRING")?,
                                     };
-                                    current_command = CompactString::new("set");
+                                    current_command = cmd_name::SET;
                                 }
                                 Command::Ping => {
                                     client.ops.pong()?;
-                                    current_command = CompactString::new("ping");
+                                    current_command = cmd_name::PING;
                                 }
                                 Command::FlushDb => {
                                     client.ops.ok()?;
-                                    current_command = CompactString::new("flushdb");
+                                    current_command = cmd_name::FLUSHDB;
                                 }
                                 Command::Docs => {
                                     client.ops.write_array(std::iter::empty::<&[u8]>(), 0)?;
-                                    current_command = CompactString::new("docs");
+                                    current_command = cmd_name::DOCS;
                                 }
                                 Command::DbSize => {
                                     client.ops.write_integer(hmap.keys().len())?;
-                                    current_command = CompactString::new("dbsize");
+                                    current_command = cmd_name::DBSIZE;
                                 }
                                 Command::Config => {
                                     client.ops.write_array(std::iter::empty::<&[u8]>(), 0)?;
-                                    current_command = CompactString::new("config");
+                                    current_command = cmd_name::CONFIG;
                                 }
                                 Command::Lpush(key, values) => {
                                     match hmap.prepend(key, values) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(values_len) => client.ops.write_integer(values_len)?,
                                     };
-                                    current_command = CompactString::new("lpush");
+                                    current_command = cmd_name::LPUSH;
                                 }
                                 Command::Rpush(key, values) => {
                                     match hmap.append(key, values) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(values_len) => client.ops.write_integer(values_len)?,
                                     };
-                                    current_command = CompactString::new("rpush");
+                                    current_command = cmd_name::RPUSH;
                                 }
                                 Command::LpushX(_, _) => {
                                     todo!("Command::LpushX is not implemented")
@@ -256,7 +303,7 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                     }
-                                    current_command = CompactString::new("lpop");
+                                    current_command = cmd_name::LPOP;
                                 }
                                 Command::Rpop(key, maybe_count) => {
                                     match hmap.pop_back(key, maybe_count) {
@@ -269,12 +316,12 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                     }
-                                    current_command = CompactString::new("rpop");
+                                    current_command = cmd_name::RPOP;
                                 }
                                 Command::Del(keys) => {
                                     let count = hmap.delete_all(keys.into_iter());
                                     client.ops.write_integer(count)?;
-                                    current_command = CompactString::new("del");
+                                    current_command = cmd_name::DEL;
                                 }
                                 Command::Incr(key) => {
                                     match hmap.incr_by(key, 1) {
@@ -284,7 +331,7 @@ fn main() -> anyhow::Result<()> {
                                             .ops
                                             .write_integer(String::from_utf8_lossy(&value))?,
                                     };
-                                    current_command = CompactString::new("incr");
+                                    current_command = cmd_name::INCR;
                                 }
                                 Command::IncrBy(key, incr_by) => {
                                     match hmap.incr_by(key, incr_by) {
@@ -294,11 +341,11 @@ fn main() -> anyhow::Result<()> {
                                             .ops
                                             .write_integer(String::from_utf8_lossy(&value))?,
                                     };
-                                    current_command = CompactString::new("incr");
+                                    current_command = cmd_name::INCR;
                                 }
-                                Command::ClientSetInfo(_) => {
+                                Command::ClientSetInfo(_) | Command::ClientSetName => {
                                     client.ops.ok()?;
-                                    current_command = CompactString::new("client");
+                                    current_command = cmd_name::CLIENT;
                                 }
                                 Command::Ttl(key) => {
                                     match hmap.get_ttl(key) {
@@ -308,7 +355,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_integer(value.as_secs())?
                                         }
                                     };
-                                    current_command = CompactString::new("ttl");
+                                    current_command = cmd_name::TTL;
                                 }
                                 Command::Lrange(key, start, end) => {
                                     match hmap.get(key) {
@@ -349,7 +396,7 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         _ => client.ops.wrong_type("stored value isn't a list")?,
                                     };
-                                    current_command = CompactString::new("lrange");
+                                    current_command = cmd_name::LRANGE;
                                 }
                                 Command::LLen(key) => {
                                     match hmap.get(key) {
@@ -359,7 +406,7 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         _ => client.ops.wrong_type("stored value isn't a list")?,
                                     };
-                                    current_command = CompactString::new("llen");
+                                    current_command = cmd_name::LLEN;
                                 }
                                 Command::Hget(key, field) => {
                                     match hmap.dict_get(key, field) {
@@ -367,7 +414,7 @@ fn main() -> anyhow::Result<()> {
                                         Ok(None) => client.ops.key_not_found()?,
                                         Ok(Some(value)) => client.ops.write_bulk_string(value)?,
                                     };
-                                    current_command = CompactString::new("hget");
+                                    current_command = cmd_name::HGET;
                                 }
                                 Command::HMget(key, fields) => {
                                     match hmap.dict_mget(key, &fields) {
@@ -377,14 +424,14 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(values.into_iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("hmget");
+                                    current_command = cmd_name::HMGET;
                                 }
                                 Command::HMset(key, fields_and_values) => {
                                     match hmap.dict_mset(key, &fields_and_values) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(()) => client.ops.ok()?,
                                     }
-                                    current_command = CompactString::new("hmset");
+                                    current_command = cmd_name::HMSET;
                                 }
                                 Command::HgetAll(key) => {
                                     match hmap.dict_get_all(key) {
@@ -394,7 +441,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(values.into_iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("hmset");
+                                    current_command = cmd_name::HMSET;
                                 }
                                 Command::HincrBy(key, field, incr_by) => {
                                     match hmap.dict_incr_by(key, field, incr_by) {
@@ -403,12 +450,12 @@ fn main() -> anyhow::Result<()> {
                                             .ops
                                             .write_integer(String::from_utf8_lossy(&value))?,
                                     }
-                                    current_command = CompactString::new("hincrby");
+                                    current_command = cmd_name::HINCRBY;
                                 }
                                 Command::Exists(key) => {
                                     let exists = if hmap.contains_key(key) { 1 } else { 0 };
                                     client.ops.write_integer(exists)?;
-                                    current_command = CompactString::new("exists");
+                                    current_command = cmd_name::EXISTS;
                                 }
                                 Command::Hexists(key, field) => {
                                     match hmap.dict_exists(key, field) {
@@ -418,7 +465,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_integer(v)?;
                                         }
                                     }
-                                    current_command = CompactString::new("hexists");
+                                    current_command = cmd_name::HEXISTS;
                                 }
                                 Command::Hkeys(key) => {
                                     match hmap.dict_keys(key) {
@@ -428,14 +475,14 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(keys.into_iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("hkeys");
+                                    current_command = cmd_name::HKEYS;
                                 }
                                 Command::Sadd(key, members) => {
                                     match hmap.set_add(key, members) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(added) => client.ops.write_integer(added)?,
                                     };
-                                    current_command = CompactString::new("sadd");
+                                    current_command = cmd_name::SADD;
                                 }
                                 Command::Sismember(key, member) => {
                                     match hmap.set_is_member(key, member) {
@@ -445,7 +492,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_integer(v)?;
                                         }
                                     }
-                                    current_command = CompactString::new("sismember");
+                                    current_command = cmd_name::SISMEMBER;
                                 }
                                 Command::Sinter(keys) => {
                                     match hmap.set_inter(&keys) {
@@ -454,7 +501,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(values.into_iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("sinter")
+                                    current_command = cmd_name::SINTER
                                 }
                                 Command::Sunion(keys) => {
                                     match hmap.set_union(&keys) {
@@ -463,7 +510,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(values.into_iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("sunion");
+                                    current_command = cmd_name::SUNION;
                                 }
                                 Command::Sdiff(keys) => {
                                     match hmap.set_diff(&keys) {
@@ -472,7 +519,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(values.into_iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("sdiff");
+                                    current_command = cmd_name::SDIFF;
                                 }
                                 Command::Scard(key) => {
                                     match hmap.set_card(key) {
@@ -480,7 +527,7 @@ fn main() -> anyhow::Result<()> {
                                         Ok(None) => client.ops.key_not_found()?,
                                         Ok(Some(len)) => client.ops.write_integer(len)?,
                                     };
-                                    current_command = CompactString::new("scard");
+                                    current_command = cmd_name::SCARD;
                                 }
                                 Command::Smembers(key) => {
                                     match hmap.set_members(key) {
@@ -490,14 +537,14 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(members.into_iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("smembers");
+                                    current_command = cmd_name::SMEMBERS;
                                 }
                                 Command::Zadd(key, members) => {
                                     match hmap.zset_add(key, &members) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(added) => client.ops.write_integer(added)?,
                                     };
-                                    current_command = CompactString::new("zadd");
+                                    current_command = cmd_name::ZADD;
                                 }
                                 Command::Zrange(key, start, stop, withscores) => {
                                     match hmap.zset_range(key, start, stop, withscores) {
@@ -507,7 +554,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(values.iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("zrange");
+                                    current_command = cmd_name::ZRANGE;
                                 }
                                 Command::Zrevrange(key, start, stop, withscores) => {
                                     match hmap.zset_revrange(key, start, stop, withscores) {
@@ -517,7 +564,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(values.iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("zrevrange");
+                                    current_command = cmd_name::ZREVRANGE;
                                 }
                                 Command::Zrank(key, member) => {
                                     match hmap.zset_rank(key, member) {
@@ -525,7 +572,7 @@ fn main() -> anyhow::Result<()> {
                                         Ok(None) => client.ops.key_not_found()?,
                                         Ok(Some(rank)) => client.ops.write_integer(rank)?,
                                     };
-                                    current_command = CompactString::new("zrank");
+                                    current_command = cmd_name::ZRANK;
                                 }
                                 Command::Zrevrank(key, member) => {
                                     match hmap.zset_revrank(key, member) {
@@ -533,7 +580,7 @@ fn main() -> anyhow::Result<()> {
                                         Ok(None) => client.ops.key_not_found()?,
                                         Ok(Some(rank)) => client.ops.write_integer(rank)?,
                                     };
-                                    current_command = CompactString::new("zrevrank");
+                                    current_command = cmd_name::ZREVRANK;
                                 }
                                 Command::Zscore(key, member) => {
                                     match hmap.zset_score(key, member) {
@@ -543,7 +590,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_bulk_string(score.to_string())?
                                         }
                                     };
-                                    current_command = CompactString::new("zscore");
+                                    current_command = cmd_name::ZSCORE;
                                 }
                                 Command::Zrangebyscore(key, min, max, withscores) => {
                                     match hmap.zset_range_by_score(key, min, max, withscores) {
@@ -553,7 +600,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_array(values.iter(), len)?
                                         }
                                     };
-                                    current_command = CompactString::new("zrangebyscore");
+                                    current_command = cmd_name::ZRANGEBYSCORE;
                                 }
                                 Command::Zincrby(key, incr, member) => {
                                     match hmap.zset_incr_by(key, incr, member) {
@@ -562,7 +609,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_bulk_string(score.to_string())?
                                         }
                                     };
-                                    current_command = CompactString::new("zincrby");
+                                    current_command = cmd_name::ZINCRBY;
                                 }
                                 Command::Zcard(key) => {
                                     match hmap.zcard(key) {
@@ -570,7 +617,7 @@ fn main() -> anyhow::Result<()> {
                                         Ok(None) => client.ops.key_not_found()?,
                                         Ok(Some(value)) => client.ops.write_integer(value)?,
                                     };
-                                    current_command = CompactString::new("zcard");
+                                    current_command = cmd_name::ZCARD;
                                 }
                                 Command::InfoCmd => {
                                     let (alloc, _) = memory_usage()?;
@@ -578,6 +625,25 @@ fn main() -> anyhow::Result<()> {
                                         format!("{}K", f64::trunc(alloc as f64 / 1024.0));
                                     let uptime_in_seconds = uptime_since.elapsed().as_secs();
                                     let uptime_in_days = uptime_since.elapsed().as_secs() / 24;
+
+                                    let mut commandstats = String::from("# Commandstats\r\n");
+                                    for (name, histogram) in &latency_histograms {
+                                        let mut calls: u64 = 0;
+                                        let mut usec: u64 = 0;
+                                        for bucket in histogram {
+                                            calls += bucket.count();
+                                            usec += bucket.end() * bucket.count();
+                                        }
+                                        let usec_per_call = if calls > 0 {
+                                            usec as f64 / calls as f64
+                                        } else {
+                                            0.0
+                                        };
+                                        commandstats.push_str(&format!(
+                                            "cmdstat_{name}:calls={calls},usec={usec},usec_per_call={usec_per_call:.2}\r\n"
+                                        ));
+                                    }
+
                                     let info = format!(
                                         "# Server\r\n\
                                          redis_version:reddis2-0.0.1\r\n\
@@ -624,18 +690,20 @@ fn main() -> anyhow::Result<()> {
                                          used_cpu_sys:0.420000\r\n\
                                          used_cpu_user:0.690000\r\n\
                                          \r\n\
+                                         {commandstats}\
+                                         \r\n\
                                          # Keyspace\r\n\
                                          db0:keys={},expires=0,avg_ttl=0\r\n",
                                         hmap.len(),
                                     );
                                     client.ops.write_bulk_string(&info)?;
-                                    current_command = CompactString::new("info");
+                                    current_command = cmd_name::INFO;
                                 }
                                 Command::LatencyHistogram(commands) => {
                                     client
                                         .ops
                                         .write_latency_histogram(&latency_histograms, &commands)?;
-                                    current_command = CompactString::new("latency");
+                                    current_command = cmd_name::LATENCY;
                                 }
                             }
                             client.read_buf.clear();

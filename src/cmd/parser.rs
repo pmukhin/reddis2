@@ -433,15 +433,21 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         }
         CmdCode::FlushDb => Ok((i, Command::FlushDb)),
         CmdCode::ClientSetInfo => {
-            let (i, _) = string(i)?; // set info
-            let (i, param) = string(i)?;
-            let (i, value) = string(i)?;
-            let param = if param.eq_ignore_ascii_case("LIB-NAME".as_bytes()) {
-                LibName(value)
+            let (i, sub) = string(i)?;
+            if sub.eq_ignore_ascii_case(b"SETNAME") {
+                let (i, _name) = string(i)?;
+                Ok((i, Command::ClientSetName))
             } else {
-                LibVersion(value)
-            };
-            Ok((i, Command::ClientSetInfo(param)))
+                // SETINFO LIB-NAME/LIB-VER <value>
+                let (i, param) = string(i)?;
+                let (i, value) = string(i)?;
+                let param = if param.eq_ignore_ascii_case(b"LIB-NAME") {
+                    LibName(value)
+                } else {
+                    LibVersion(value)
+                };
+                Ok((i, Command::ClientSetInfo(param)))
+            }
         }
         CmdCode::Ttl => {
             let (i, key) = string(i)?;

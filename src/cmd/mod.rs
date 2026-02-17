@@ -33,6 +33,7 @@ pub enum Command<'a> {
     IncrBy(&'a [u8], i64),
     FlushDb,
     ClientSetInfo(Info<'a>),
+    ClientSetName,
     Ttl(&'a [u8]),
     LLen(&'a [u8]),
     Hget(&'a [u8], &'a [u8]),
