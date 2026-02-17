@@ -247,8 +247,7 @@ fn main() -> anyhow::Result<()> {
                                         client.ops.write_integer(String::from_utf8_lossy(&value))?
                                     }
                                 },
-                                Command::IncrBy(key, incr_by) => match hmap.incr_by(key, incr_by)
-                                {
+                                Command::IncrBy(key, incr_by) => match hmap.incr_by(key, incr_by) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(None) => client.ops.key_not_found()?,
                                     Ok(Some(value)) => {
@@ -261,9 +260,7 @@ fn main() -> anyhow::Result<()> {
                                 Command::Ttl(key) => match hmap.get_ttl(key) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(value)) => {
-                                        client.ops.write_integer(value.as_secs())?
-                                    }
+                                    Ok(Some(value)) => client.ops.write_integer(value.as_secs())?,
                                 },
                                 Command::Lrange(key, start, end) => match hmap.get(key) {
                                     None => client.ops.key_not_found()?,
@@ -314,9 +311,9 @@ fn main() -> anyhow::Result<()> {
                                 Command::HincrBy(key, field, incr_by) => {
                                     match hmap.dict_incr_by(key, field, incr_by) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
-                                        Ok(value) => {
-                                            client.ops.write_integer(String::from_utf8_lossy(&value))?
-                                        }
+                                        Ok(value) => client
+                                            .ops
+                                            .write_integer(String::from_utf8_lossy(&value))?,
                                     }
                                 }
                                 Command::Exists(key) => {

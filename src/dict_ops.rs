@@ -5,7 +5,6 @@ use std::collections::HashMap;
 
 pub trait HMapDictOps {
     fn dict_get(&self, key: &[u8], field: &[u8]) -> anyhow::Result<Option<&Bytes>>;
-    fn dict_set(&mut self, key: &[u8], field: &[u8], value: &[u8]) -> anyhow::Result<()>;
     fn dict_mget(
         &self,
         key: &[u8],
@@ -23,19 +22,6 @@ impl HMapDictOps for HashMap<Bytes, StoredValue> {
         match self.get(key) {
             None => Ok(None),
             Some(StoredValue::Dict(dict)) => Ok(dict.get(field)),
-            _ => bail!("stored value isn't a dict"),
-        }
-    }
-
-    fn dict_set(&mut self, key: &[u8], field: &[u8], value: &[u8]) -> anyhow::Result<()> {
-        let stored_value = self
-            .entry(Bytes::copy_from_slice(key))
-            .or_insert(StoredValue::Dict(Default::default()));
-        match stored_value {
-            StoredValue::Dict(dict) => {
-                dict.insert(Bytes::copy_from_slice(field), Bytes::copy_from_slice(value));
-                Ok(())
-            }
             _ => bail!("stored value isn't a dict"),
         }
     }
