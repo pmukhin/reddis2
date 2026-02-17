@@ -217,7 +217,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_bulk_string(bytes)?
                                         }
                                         Ok(Popped::Multiple(values)) => {
-                                            client.ops.write_array(values.as_slice())?
+                                            client.ops.write_array(values.iter(), values.len())?
                                         }
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                     }
@@ -229,7 +229,7 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_bulk_string(bytes)?
                                         }
                                         Ok(Popped::Multiple(values)) => {
-                                            client.ops.write_array(values.as_slice())?
+                                            client.ops.write_array(values.iter(), values.len())?
                                         }
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                     }
@@ -272,7 +272,7 @@ fn main() -> anyhow::Result<()> {
                                             .skip(real_start)
                                             .take(real_end - real_start)
                                             .collect::<Vec<_>>();
-                                        client.ops.write_array(vec.as_slice())?;
+                                        client.ops.write_array(vec.iter(), vec.len())?;
                                     }
                                     _ => client.ops.wrong_type("stored value isn't a list")?,
                                 },
@@ -316,11 +316,8 @@ fn main() -> anyhow::Result<()> {
                                 Command::HMget(key, fields) => match hmap.get(key) {
                                     None => client.ops.key_not_found()?,
                                     Some(StoredValue::Dict(dict)) => {
-                                        let result = fields
-                                            .iter()
-                                            .filter_map(|f| dict.get(*f))
-                                            .collect::<Vec<_>>();
-                                        client.ops.write_array(result.as_slice())?;
+                                        let result = fields.iter().filter_map(|f| dict.get(*f));
+                                        client.ops.write_array(result, dict.keys().len())?;
                                     }
                                     _ => client.ops.wrong_type("stored value isn't a dict")?,
                                 },
@@ -352,11 +349,11 @@ fn main() -> anyhow::Result<()> {
                                 Command::HgetAll(key) => match hmap.get(key) {
                                     None => client.ops.key_not_found()?,
                                     Some(StoredValue::Dict(dict)) => {
-                                        let fields_and_values = dict
-                                            .iter()
-                                            .flat_map(|(k, v)| [k, v])
-                                            .collect::<Vec<_>>();
-                                        client.ops.write_array(fields_and_values.as_slice())?;
+                                        let fields_and_values =
+                                            dict.iter().flat_map(|(k, v)| [k, v]);
+                                        client
+                                            .ops
+                                            .write_array(fields_and_values, dict.keys().len())?;
                                     }
                                     _ => client.ops.wrong_type("stored value isn't a dict")?,
                                 },

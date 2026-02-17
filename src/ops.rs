@@ -22,9 +22,12 @@ impl Ops {
         Ok(())
     }
 
-    pub fn write_array<A: AsRef<[u8]>>(&mut self, array: &[A]) -> std::io::Result<()> {
-        self.stream
-            .write_fmt(format_args!("*{}\r\n", array.len()))?;
+    pub fn write_array<A: AsRef<[u8]>>(
+        &mut self,
+        array: impl Iterator<Item = A>,
+        len: usize,
+    ) -> std::io::Result<()> {
+        self.stream.write_fmt(format_args!("*{}\r\n", len))?;
         for elem in array {
             self.write_bulk_string(elem.as_ref())?;
         }
