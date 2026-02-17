@@ -5,6 +5,7 @@ mod hmap_ops;
 mod list_ops;
 mod numerical_ops;
 mod ops;
+mod set_ops;
 mod stored_value;
 
 use crate::cmd::Command;
@@ -14,6 +15,7 @@ use hmap_ops::HMapOps;
 
 use crate::list_ops::{HMapListOps, Popped};
 use crate::numerical_ops::HMapNumericalOps;
+use crate::set_ops::HMapSetOps;
 use crate::stored_value::StoredValue;
 use anyhow::Context;
 use bytes::Bytes;
@@ -336,6 +338,55 @@ fn main() -> anyhow::Result<()> {
                                     Ok(None) => client.ops.key_not_found()?,
                                     Ok(Some((keys, len))) => {
                                         client.ops.write_array(keys.into_iter(), len)?
+                                    }
+                                },
+                                Command::Sadd(key, members) => {
+                                    match hmap.set_add(key, members) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(added) => {
+                                            client.ops.write_bulk_string(added.to_string())?
+                                        }
+                                    }
+                                }
+                                Command::Sismember(key, member) => {
+                                    match hmap.set_is_member(key, member) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(exists) => {
+                                            let v = if exists { 1 } else { 0 };
+                                            client.ops.write_bulk_string(v.to_string())?;
+                                        }
+                                    }
+                                }
+                                Command::Sinter(keys) => match hmap.set_inter(&keys) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok((values, len)) => {
+                                        client.ops.write_array(values.into_iter(), len)?
+                                    }
+                                },
+                                Command::Sunion(keys) => match hmap.set_union(&keys) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok((values, len)) => {
+                                        client.ops.write_array(values.into_iter(), len)?
+                                    }
+                                },
+                                Command::Sdiff(keys) => match hmap.set_diff(&keys) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok((values, len)) => {
+                                        client.ops.write_array(values.into_iter(), len)?
+                                    }
+                                },
+                                Command::Scard(key) => match hmap.set_card(key) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some(len)) => {
+                                        client.ops.write_bulk_string(len.to_string())?
+                                    }
+                                },
+                                Command::Smembers(key) => match hmap.set_members(key) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some((members, len))) => {
+                                        client.ops.write_array(members.into_iter(), len)?
                                     }
                                 },
                             }

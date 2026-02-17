@@ -47,6 +47,13 @@ enum CmdCode {
     Exists,
     Hexists,
     Hkeys,
+    Sadd,
+    Sismember,
+    Sinter,
+    Sunion,
+    Sdiff,
+    Scard,
+    Smembers,
 }
 
 fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
@@ -72,6 +79,13 @@ fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {
         b"EXISTS" => CmdCode::Exists,
         b"HEXISTS" => CmdCode::Hexists,
         b"HKEYS" => CmdCode::Hkeys,
+        b"SADD" => CmdCode::Sadd,
+        b"SISMEMBER" => CmdCode::Sismember,
+        b"SINTER" => CmdCode::Sinter,
+        b"SUNION" => CmdCode::Sunion,
+        b"SDIFF" => CmdCode::Sdiff,
+        b"SCARD" => CmdCode::Scard,
+        b"SMEMBERS" => CmdCode::Smembers,
         b"DEL" => CmdCode::Del,
         b"INCRBY" => CmdCode::IncrBy,
         b"INCR" => CmdCode::Incr,
@@ -268,6 +282,32 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         CmdCode::Hkeys => {
             let (i, key) = string(i)?;
             Ok((i, Command::Hkeys(key)))
+        }
+        CmdCode::Sadd => push(i, Command::Sadd),
+        CmdCode::Sismember => {
+            let (i, key) = string(i)?;
+            let (i, member) = string(i)?;
+            Ok((i, Command::Sismember(key, member)))
+        }
+        CmdCode::Sinter => {
+            let (i, keys) = separated_list0(tag("\r\n"), value)(i)?;
+            Ok((i, Command::Sinter(keys.to_vec())))
+        }
+        CmdCode::Sunion => {
+            let (i, keys) = separated_list0(tag("\r\n"), value)(i)?;
+            Ok((i, Command::Sunion(keys.to_vec())))
+        }
+        CmdCode::Sdiff => {
+            let (i, keys) = separated_list0(tag("\r\n"), value)(i)?;
+            Ok((i, Command::Sdiff(keys.to_vec())))
+        }
+        CmdCode::Scard => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::Scard(key)))
+        }
+        CmdCode::Smembers => {
+            let (i, key) = string(i)?;
+            Ok((i, Command::Smembers(key)))
         }
         CmdCode::Config => Ok((i, Command::Config)),
         CmdCode::FlushDb => Ok((i, Command::FlushDb)),

@@ -44,4 +44,11 @@ pub enum Command<'a> {
     Exists(&'a [u8]),
     Hexists(&'a [u8], &'a [u8]),
     Hkeys(&'a [u8]),
+    Sadd(&'a [u8], Vec<&'a [u8]>),
+    Sismember(&'a [u8], &'a [u8]),
+    Sinter(Vec<&'a [u8]>),
+    Sunion(Vec<&'a [u8]>),
+    Sdiff(Vec<&'a [u8]>),
+    Scard(&'a [u8]),
+    Smembers(&'a [u8]),
 }
