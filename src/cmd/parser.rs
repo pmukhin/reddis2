@@ -244,9 +244,7 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         }
         CmdCode::IncrBy => {
             let (i, key) = string(i)?;
-            println!("key={}", String::from_utf8_lossy(key));
             let (i, incr_by) = u_number::<i64>(i)?;
-            println!("incr_by={}", String::from_utf8_lossy(i));
             Ok((i, Command::IncrBy(key, incr_by)))
         }
         CmdCode::Del => {

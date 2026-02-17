@@ -65,7 +65,7 @@ impl HMapDictOps for HashMap<Bytes, StoredValue> {
             None => Ok(None),
             Some(StoredValue::Dict(dict)) => {
                 let values = dict.iter().flat_map(|(k, v)| [k, v]).collect();
-                Ok(Some((values, dict.keys().len())))
+                Ok(Some((values, dict.keys().len() * 2)))
             }
             _ => bail!("stored value isn't a dict"),
         }
