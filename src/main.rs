@@ -457,13 +457,11 @@ fn main() -> anyhow::Result<()> {
                                         }
                                     }
                                 }
-                                Command::Zcard(key) => {
-                                    match hmap.zcard(key) {
-                                        Err(e) => client.ops.wrong_type(e.to_string())?,
-                                        Ok(None) => client.ops.key_not_found()?,
-                                        Ok(Some(value)) => client.ops.write_integer(value)?,
-                                    }
-                                }
+                                Command::Zcard(key) => match hmap.zcard(key) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some(value)) => client.ops.write_integer(value)?,
+                                },
                             }
                             client.read_buf.clear();
                             trace!("[{token:?}] command is executed, buffer cleared");

@@ -62,7 +62,7 @@ enum CmdCode {
     Zscore,
     Zrangebyscore,
     Zincrby,
-    Zcard
+    Zcard,
 }
 
 fn cmd(i: &[u8]) -> IResult<&[u8], CmdCode, ParseFailure> {

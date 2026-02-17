@@ -228,9 +228,7 @@ impl HMapSortedSetOps for HashMap<Bytes, StoredValue> {
     fn zcard(&self, key: &[u8]) -> anyhow::Result<Option<usize>> {
         match self.get(key) {
             None => Ok(None),
-            Some(StoredValue::SortedSet(_, scores)) => {
-                Ok(Some(scores.len()))
-            }
+            Some(StoredValue::SortedSet(_, scores)) => Ok(Some(scores.len())),
             _ => bail!("stored value isn't a sorted set"),
         }
     }
