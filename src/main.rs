@@ -3,6 +3,7 @@ mod dict_ops;
 mod err;
 mod hmap_ops;
 mod list_ops;
+mod memory;
 mod numerical_ops;
 mod ops;
 mod set_ops;
@@ -15,17 +16,26 @@ use crate::err::RedisError;
 use hmap_ops::HMapOps;
 
 use crate::list_ops::{HMapListOps, Popped};
+use crate::memory::memory_usage;
 use crate::numerical_ops::HMapNumericalOps;
 use crate::set_ops::HMapSetOps;
 use crate::sorted_set_ops::HMapSortedSetOps;
 use crate::stored_value::StoredValue;
 use anyhow::Context;
 use bytes::Bytes;
+use compact_str::CompactString;
+use histogram::Histogram;
 use mio::net::TcpListener;
 use mio::{Events, Interest, Poll, Token};
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
 use tracing::{info, trace, warn};
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 const SERVER: Token = Token(0);
 
@@ -36,6 +46,8 @@ struct Client {
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+
+    let uptime_since = Instant::now();
 
     let mut hmap: HashMap<Bytes, StoredValue> = HashMap::default();
     let _ttl_map: BTreeMap<Instant, Bytes> = BTreeMap::default();
@@ -52,6 +64,8 @@ fn main() -> anyhow::Result<()> {
     let mut clients: HashMap<Token, Client> = HashMap::new();
     let mut next_token_id: usize = 1;
     let mut buf = [0u8; 1024];
+
+    let mut latency_histograms = HashMap::<CompactString, Histogram>::new();
 
     info!("TCP server listening on {addr}");
 
@@ -93,6 +107,10 @@ fn main() -> anyhow::Result<()> {
                     // for huge responses
                     let mut to_return = Vec::<u8>::new();
 
+                    let cmd_instant = Instant::now();
+                    let mut current_command = CompactString::default();
+
+                    let clients_len = clients.len();
                     let client = clients
                         .get_mut(&token)
                         .with_context(|| format!("client not registered: {:?}", token))?;
@@ -125,13 +143,16 @@ fn main() -> anyhow::Result<()> {
                                 }
                             };
                             match cmd {
-                                Command::Get(key) => match hmap.get(key) {
-                                    None => client.ops.key_not_found()?,
-                                    Some(StoredValue::Plain(bytes)) => {
-                                        client.ops.write_bulk_string(bytes)?;
-                                    }
-                                    Some(_) => client.ops.wrong_type("expected STRING")?,
-                                },
+                                Command::Get(key) => {
+                                    match hmap.get(key) {
+                                        None => client.ops.key_not_found()?,
+                                        Some(StoredValue::Plain(bytes)) => {
+                                            client.ops.write_bulk_string(bytes)?;
+                                        }
+                                        Some(_) => client.ops.wrong_type("expected STRING")?,
+                                    };
+                                    current_command = CompactString::new("get");
+                                }
                                 Command::Set(key, value, maybe_ttl) => {
                                     hmap.insert_alloc(
                                         key,
@@ -139,14 +160,17 @@ fn main() -> anyhow::Result<()> {
                                         maybe_ttl.map(|dur| Instant::now() + dur),
                                     );
                                     client.ops.ok()?;
+                                    current_command = CompactString::new("set");
                                 }
                                 Command::SetNx(key, value) => {
                                     hmap.set_if_not_exist(key, value);
                                     client.ops.ok()?;
+                                    current_command = CompactString::new("set");
                                 }
                                 Command::SetXx(key, value) => {
                                     hmap.update_if_exist(key, value);
                                     client.ops.ok()?;
+                                    current_command = CompactString::new("set");
                                 }
                                 Command::SetAndGet(key, value) => {
                                     match hmap.insert_alloc(key, value, None) {
@@ -161,50 +185,65 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         _ => client.ops.wrong_type("expected STRING")?,
                                     }
+                                    current_command = CompactString::new("set");
                                 }
-                                Command::SetKeepTtl(key, value) => match hmap.get_mut(key) {
-                                    None => {
-                                        hmap.insert_alloc(key, value, None);
-                                        client.ops.ok()?;
-                                    }
-                                    Some(StoredValue::Plain(bytes)) => {
-                                        client.ops.write_bulk_string(&bytes)?;
-                                        *bytes = Bytes::copy_from_slice(bytes);
-                                    }
-                                    Some(StoredValue::TtlPlain(bytes, _)) => {
-                                        client.ops.write_bulk_string(&bytes)?;
-                                        *bytes = Bytes::copy_from_slice(bytes);
-                                    }
-                                    _ => client.ops.wrong_type("expected STRING")?,
-                                },
+                                Command::SetKeepTtl(key, value) => {
+                                    match hmap.get_mut(key) {
+                                        None => {
+                                            hmap.insert_alloc(key, value, None);
+                                            client.ops.ok()?;
+                                        }
+                                        Some(StoredValue::Plain(bytes)) => {
+                                            client.ops.write_bulk_string(&bytes)?;
+                                            *bytes = Bytes::copy_from_slice(bytes);
+                                        }
+                                        Some(StoredValue::TtlPlain(bytes, _)) => {
+                                            client.ops.write_bulk_string(&bytes)?;
+                                            *bytes = Bytes::copy_from_slice(bytes);
+                                        }
+                                        _ => client.ops.wrong_type("expected STRING")?,
+                                    };
+                                    current_command = CompactString::new("set");
+                                }
                                 Command::Ping => {
                                     client.ops.pong()?;
+                                    current_command = CompactString::new("ping");
                                 }
                                 Command::FlushDb => {
                                     client.ops.ok()?;
+                                    current_command = CompactString::new("flushdb");
                                 }
                                 Command::Docs => {
                                     client.ops.write_array(std::iter::empty::<&[u8]>(), 0)?;
+                                    current_command = CompactString::new("docs");
                                 }
                                 Command::DbSize => {
                                     client.ops.write_integer(hmap.keys().len())?;
+                                    current_command = CompactString::new("dbsize");
                                 }
                                 Command::Config => {
                                     client.ops.write_array(std::iter::empty::<&[u8]>(), 0)?;
+                                    current_command = CompactString::new("config");
                                 }
-                                Command::Lpush(key, values) => match hmap.prepend(key, values) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(values_len) => client.ops.write_integer(values_len)?,
-                                },
-                                Command::Rpush(key, values) => match hmap.append(key, values) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(values_len) => client.ops.write_integer(values_len)?,
-                                },
+                                Command::Lpush(key, values) => {
+                                    match hmap.prepend(key, values) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(values_len) => client.ops.write_integer(values_len)?,
+                                    };
+                                    current_command = CompactString::new("lpush");
+                                }
+                                Command::Rpush(key, values) => {
+                                    match hmap.append(key, values) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(values_len) => client.ops.write_integer(values_len)?,
+                                    };
+                                    current_command = CompactString::new("rpush");
+                                }
                                 Command::LpushX(_, _) => {
-                                    println!("Command::LpushX")
+                                    todo!("Command::LpushX is not implemented")
                                 }
                                 Command::RpushX(_, _) => {
-                                    println!("Command::RpushX")
+                                    todo!("Command::RpushX is not implemented")
                                 }
                                 Command::Lpop(key, maybe_count) => {
                                     match hmap.pop_front(key, maybe_count) {
@@ -217,6 +256,7 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                     }
+                                    current_command = CompactString::new("lpop");
                                 }
                                 Command::Rpop(key, maybe_count) => {
                                     match hmap.pop_back(key, maybe_count) {
@@ -229,103 +269,133 @@ fn main() -> anyhow::Result<()> {
                                         }
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                     }
+                                    current_command = CompactString::new("rpop");
                                 }
                                 Command::Del(keys) => {
                                     let count = hmap.delete_all(keys.into_iter());
                                     client.ops.write_integer(count)?;
+                                    current_command = CompactString::new("del");
                                 }
-                                Command::Incr(key) => match hmap.incr_by(key, 1) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(value)) => {
-                                        client.ops.write_integer(String::from_utf8_lossy(&value))?
-                                    }
-                                },
-                                Command::IncrBy(key, incr_by) => match hmap.incr_by(key, incr_by) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(value)) => {
-                                        client.ops.write_integer(String::from_utf8_lossy(&value))?
-                                    }
-                                },
+                                Command::Incr(key) => {
+                                    match hmap.incr_by(key, 1) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(value)) => client
+                                            .ops
+                                            .write_integer(String::from_utf8_lossy(&value))?,
+                                    };
+                                    current_command = CompactString::new("incr");
+                                }
+                                Command::IncrBy(key, incr_by) => {
+                                    match hmap.incr_by(key, incr_by) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(value)) => client
+                                            .ops
+                                            .write_integer(String::from_utf8_lossy(&value))?,
+                                    };
+                                    current_command = CompactString::new("incr");
+                                }
                                 Command::ClientSetInfo(_) => {
                                     client.ops.ok()?;
+                                    current_command = CompactString::new("client");
                                 }
-                                Command::Ttl(key) => match hmap.get_ttl(key) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(value)) => client.ops.write_integer(value.as_secs())?,
-                                },
-                                Command::Lrange(key, start, end) => match hmap.get(key) {
-                                    None => client.ops.key_not_found()?,
-                                    Some(StoredValue::List(ll)) => {
-                                        let start = if start < 0 {
-                                            ll.len() as isize - start
-                                        } else {
-                                            start
-                                        };
-                                        let end = if end < 0 {
-                                            ll.len() as isize - end
-                                        } else {
-                                            end
-                                        };
-                                        // @todo optimise this...
-                                        info!(
-                                            "lpop: key = {}, start = {}, end = {}, ll={:?}",
-                                            String::from_utf8_lossy(key),
-                                            start,
-                                            end,
-                                            &ll
-                                        );
+                                Command::Ttl(key) => {
+                                    match hmap.get_ttl(key) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(value)) => {
+                                            client.ops.write_integer(value.as_secs())?
+                                        }
+                                    };
+                                    current_command = CompactString::new("ttl");
+                                }
+                                Command::Lrange(key, start, end) => {
+                                    match hmap.get(key) {
+                                        None => client.ops.key_not_found()?,
+                                        Some(StoredValue::List(ll)) => {
+                                            let start = if start < 0 {
+                                                ll.len() as isize - start
+                                            } else {
+                                                start
+                                            };
+                                            let end = if end < 0 {
+                                                ll.len() as isize - end
+                                            } else {
+                                                end
+                                            };
+                                            // @todo optimise this...
+                                            info!(
+                                                "lpop: key = {}, start = {}, end = {}, ll={:?}",
+                                                String::from_utf8_lossy(key),
+                                                start,
+                                                end,
+                                                &ll
+                                            );
 
-                                        let vec: Vec<_> = if start <= end {
-                                            ll.iter()
-                                                .skip(start as usize)
-                                                .take(end as usize + 1)
-                                                .collect()
-                                        } else {
-                                            ll.iter()
-                                                .skip(end as usize)
-                                                .take(start as usize + 1)
-                                                .rev()
-                                                .collect()
-                                        };
-                                        client.ops.write_array(vec.iter(), vec.len())?;
-                                    }
-                                    _ => client.ops.wrong_type("stored value isn't a list")?,
-                                },
-                                Command::LLen(key) => match hmap.get(key) {
-                                    None => client.ops.key_not_found()?,
-                                    Some(StoredValue::List(ll)) => {
-                                        client.ops.write_integer(ll.len())?;
-                                    }
-                                    _ => client.ops.wrong_type("stored value isn't a list")?,
-                                },
-                                Command::Hget(key, field) => match hmap.dict_get(key, field) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(value)) => client.ops.write_bulk_string(value)?,
-                                },
-                                Command::HMget(key, fields) => match hmap.dict_mget(key, &fields) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some((values, len))) => {
-                                        client.ops.write_array(values.into_iter(), len)?
-                                    }
-                                },
+                                            let vec: Vec<_> = if start <= end {
+                                                ll.iter()
+                                                    .skip(start as usize)
+                                                    .take(end as usize + 1)
+                                                    .collect()
+                                            } else {
+                                                ll.iter()
+                                                    .skip(end as usize)
+                                                    .take(start as usize + 1)
+                                                    .rev()
+                                                    .collect()
+                                            };
+                                            client.ops.write_array(vec.iter(), vec.len())?;
+                                        }
+                                        _ => client.ops.wrong_type("stored value isn't a list")?,
+                                    };
+                                    current_command = CompactString::new("lrange");
+                                }
+                                Command::LLen(key) => {
+                                    match hmap.get(key) {
+                                        None => client.ops.key_not_found()?,
+                                        Some(StoredValue::List(ll)) => {
+                                            client.ops.write_integer(ll.len())?;
+                                        }
+                                        _ => client.ops.wrong_type("stored value isn't a list")?,
+                                    };
+                                    current_command = CompactString::new("llen");
+                                }
+                                Command::Hget(key, field) => {
+                                    match hmap.dict_get(key, field) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some(value)) => client.ops.write_bulk_string(value)?,
+                                    };
+                                    current_command = CompactString::new("hget");
+                                }
+                                Command::HMget(key, fields) => {
+                                    match hmap.dict_mget(key, &fields) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some((values, len))) => {
+                                            client.ops.write_array(values.into_iter(), len)?
+                                        }
+                                    };
+                                    current_command = CompactString::new("hmget");
+                                }
                                 Command::HMset(key, fields_and_values) => {
                                     match hmap.dict_mset(key, &fields_and_values) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(()) => client.ops.ok()?,
                                     }
+                                    current_command = CompactString::new("hmset");
                                 }
-                                Command::HgetAll(key) => match hmap.dict_get_all(key) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some((values, len))) => {
-                                        client.ops.write_array(values.into_iter(), len)?
-                                    }
-                                },
+                                Command::HgetAll(key) => {
+                                    match hmap.dict_get_all(key) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some((values, len))) => {
+                                            client.ops.write_array(values.into_iter(), len)?
+                                        }
+                                    };
+                                    current_command = CompactString::new("hmset");
+                                }
                                 Command::HincrBy(key, field, incr_by) => {
                                     match hmap.dict_incr_by(key, field, incr_by) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
@@ -333,10 +403,12 @@ fn main() -> anyhow::Result<()> {
                                             .ops
                                             .write_integer(String::from_utf8_lossy(&value))?,
                                     }
+                                    current_command = CompactString::new("hincrby");
                                 }
                                 Command::Exists(key) => {
                                     let exists = if hmap.contains_key(key) { 1 } else { 0 };
                                     client.ops.write_integer(exists)?;
+                                    current_command = CompactString::new("exists");
                                 }
                                 Command::Hexists(key, field) => {
                                     match hmap.dict_exists(key, field) {
@@ -346,18 +418,25 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_integer(v)?;
                                         }
                                     }
+                                    current_command = CompactString::new("hexists");
                                 }
-                                Command::Hkeys(key) => match hmap.dict_keys(key) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some((keys, len))) => {
-                                        client.ops.write_array(keys.into_iter(), len)?
-                                    }
-                                },
-                                Command::Sadd(key, members) => match hmap.set_add(key, members) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(added) => client.ops.write_integer(added)?,
-                                },
+                                Command::Hkeys(key) => {
+                                    match hmap.dict_keys(key) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(None) => client.ops.key_not_found()?,
+                                        Ok(Some((keys, len))) => {
+                                            client.ops.write_array(keys.into_iter(), len)?
+                                        }
+                                    };
+                                    current_command = CompactString::new("hkeys");
+                                }
+                                Command::Sadd(key, members) => {
+                                    match hmap.set_add(key, members) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok(added) => client.ops.write_integer(added)?,
+                                    };
+                                    current_command = CompactString::new("sadd");
+                                }
                                 Command::Sismember(key, member) => {
                                     match hmap.set_is_member(key, member) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
@@ -366,13 +445,17 @@ fn main() -> anyhow::Result<()> {
                                             client.ops.write_integer(v)?;
                                         }
                                     }
+                                    current_command = CompactString::new("sismember");
                                 }
-                                Command::Sinter(keys) => match hmap.set_inter(&keys) {
-                                    Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok((values, len)) => {
-                                        client.ops.write_array(values.into_iter(), len)?
-                                    }
-                                },
+                                Command::Sinter(keys) => {
+                                    match hmap.set_inter(&keys) {
+                                        Err(e) => client.ops.wrong_type(e.to_string())?,
+                                        Ok((values, len)) => {
+                                            client.ops.write_array(values.into_iter(), len)?
+                                        }
+                                    };
+                                    current_command = CompactString::new("sinter")
+                                }
                                 Command::Sunion(keys) => match hmap.set_union(&keys) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok((values, len)) => {
@@ -463,14 +546,82 @@ fn main() -> anyhow::Result<()> {
                                     Ok(Some(value)) => client.ops.write_integer(value)?,
                                 },
                                 Command::InfoCmd => {
-                                    client.ops.write_info(hmap.len())?;
+                                    let (alloc, _) = memory_usage()?;
+                                    let alloc_readable =
+                                        format!("{}K", f64::trunc(alloc as f64 / 1024.0));
+                                    let uptime_in_seconds = uptime_since.elapsed().as_secs();
+                                    let uptime_in_days = uptime_since.elapsed().as_secs() / 24;
+                                    let info = format!(
+                                        "# Server\r\n\
+                                         redis_version:reddis2-0.0.1\r\n\
+                                         redis_mode:standalone\r\n\
+                                         os:Rust/mio\r\n\
+                                         arch_bits:64\r\n\
+                                         tcp_port:6379\r\n\
+                                         uptime_in_seconds:{uptime_in_seconds}\r\n\
+                                         uptime_in_days:{uptime_in_days}\r\n\
+                                         hz:10\r\n\
+                                         executable:/usr/local/bin/reddis2\r\n\
+                                         config_file:\r\n\
+                                         \r\n\
+                                         # Clients\r\n\
+                                         connected_clients:{clients_len}\r\n\
+                                         blocked_clients:0\r\n\
+                                         tracking_clients:0\r\n\
+                                         maxclients:10000\r\n\
+                                         \r\n\
+                                         # Memory\r\n\
+                                         used_memory:{alloc}\r\n\
+                                         used_memory_human:{alloc_readable}\r\n\
+                                         used_memory_peak:2048000\r\n\
+                                         maxmemory:0\r\n\
+                                         maxmemory_human:0B\r\n\
+                                         maxmemory_policy:noeviction\r\n\
+                                         mem_fragmentation_ratio:2.00\r\n\
+                                         \r\n\
+                                         # Stats\r\n\
+                                         total_connections_received:100\r\n\
+                                         total_commands_processed:1337\r\n\
+                                         instantaneous_ops_per_sec:42\r\n\
+                                         rejected_connections:0\r\n\
+                                         expired_keys:0\r\n\
+                                         evicted_keys:0\r\n\
+                                         keyspace_hits:500\r\n\
+                                         keyspace_misses:50\r\n\
+                                         \r\n\
+                                         # Replication\r\n\
+                                         role:master\r\n\
+                                         connected_slaves:0\r\n\
+                                         \r\n\
+                                         # CPU\r\n\
+                                         used_cpu_sys:0.420000\r\n\
+                                         used_cpu_user:0.690000\r\n\
+                                         \r\n\
+                                         # Keyspace\r\n\
+                                         db0:keys={},expires=0,avg_ttl=0\r\n",
+                                        hmap.len(),
+                                    );
+                                    client.ops.write_bulk_string(&info)?;
                                 }
                                 Command::LatencyHistogram => {
-                                    client.ops.write_latency_histogram()?;
+                                    client.ops.write_latency_histogram(&latency_histograms)?;
                                 }
                             }
                             client.read_buf.clear();
-                            trace!("[{token:?}] command is executed, buffer cleared");
+
+                            let latency = cmd_instant.elapsed().as_micros() as u64;
+                            latency_histograms
+                                .entry(current_command.clone())
+                                .or_insert(Histogram::new(2, 30)?)
+                                .increment(latency)
+                                .with_context(|| {
+                                    format!("can't store latency {latency} for {current_command}")
+                                })?;
+
+                            trace!(
+                                "[{token:?}] command is executed, buffer cleared, latency: {}usecs",
+                                latency
+                            );
                             break;
                         }
                     }
