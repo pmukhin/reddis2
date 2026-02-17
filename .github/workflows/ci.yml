@@ -39,3 +39,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cargo test
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: cargo build --release
+      - name: Start server
+        run: |
+          cargo run --release &
+          sleep 2
+      - run: pip install -r py_tests/requirements.txt
+      - run: pytest py_tests/redis_test.py -v
