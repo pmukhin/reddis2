@@ -1,7 +1,8 @@
 use crate::StoredValue;
+use anyhow::bail;
 use bytes::Bytes;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub trait HMapOps<K, V> {
     fn set_if_not_exist(&mut self, key: &[u8], value: &[u8]);
@@ -16,6 +17,8 @@ pub trait HMapOps<K, V> {
     ) -> Option<StoredValue>;
 
     fn delete_all<'a>(&'a mut self, keys: impl Iterator<Item = &'a [u8]>);
+
+    fn get_ttl(&self, key: &[u8]) -> anyhow::Result<Option<Duration>>;
 }
 
 impl HMapOps<Bytes, StoredValue> for HashMap<Bytes, StoredValue> {
@@ -50,6 +53,19 @@ impl HMapOps<Bytes, StoredValue> for HashMap<Bytes, StoredValue> {
     fn delete_all<'a>(&'a mut self, keys: impl Iterator<Item = &'a [u8]>) {
         for key in keys {
             self.remove(key);
+        }
+    }
+
+    fn get_ttl(&self, key: &[u8]) -> anyhow::Result<Option<Duration>> {
+        match self.get(key) {
+            None => Ok(None),
+            Some(StoredValue::TtlPlain(_bytes, i)) => {
+                let now = Instant::now();
+                let diff = i.duration_since(now);
+                Ok(Some(diff))
+            }
+            Some(StoredValue::Plain(_)) => Ok(None),
+            _ => bail!("cannot get the TTL for the stored value"),
         }
     }
 }

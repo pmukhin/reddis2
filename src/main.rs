@@ -252,14 +252,12 @@ fn main() -> anyhow::Result<()> {
                                 Command::ClientSetInfo(_) => {
                                     client.ops.ok()?;
                                 }
-                                Command::Ttl(key) => match hmap.get(key) {
-                                    None => client.ops.key_not_found()?,
-                                    Some(StoredValue::TtlPlain(_bytes, i)) => {
-                                        let now = Instant::now();
-                                        let diff = i.duration_since(now).as_secs();
-                                        client.ops.write_bulk_string(diff.to_string())?;
+                                Command::Ttl(key) => match hmap.get_ttl(key) {
+                                    Err(e) => client.ops.wrong_type(e.to_string())?,
+                                    Ok(None) => client.ops.key_not_found()?,
+                                    Ok(Some(value)) => {
+                                        client.ops.write_bulk_string(value.as_secs().to_string())?
                                     }
-                                    _ => client.ops.wrong_type("stored value doesn't have TTL")?,
                                 },
                                 Command::Lrange(key, start, end) => match hmap.get(key) {
                                     None => client.ops.key_not_found()?,
