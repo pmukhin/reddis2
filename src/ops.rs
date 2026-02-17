@@ -34,6 +34,10 @@ impl Ops {
         Ok(())
     }
 
+    pub fn write_integer(&mut self, n: impl std::fmt::Display) -> std::io::Result<()> {
+        self.stream.write_fmt(format_args!(":{}\r\n", n))
+    }
+
     pub fn ok(&mut self) -> std::io::Result<()> {
         self.stream.write_all("+OK\r\n".as_bytes())
     }

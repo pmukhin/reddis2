@@ -262,13 +262,12 @@ fn root(i: &[u8]) -> IResult<&[u8], Command<'_>, ParseFailure> {
         }
         CmdCode::Hset => {
             let (i, key) = string(i)?;
-            let (i, field) = string(i)?;
-            let (i, value) = string(i)?;
-            Ok((i, Command::Hset(key, field, value)))
+            let (i, fields_and_values) = separated_list0(tag("\r\n"), value)(i)?;
+            Ok((i, Command::HMset(key, fields_and_values)))
         }
         CmdCode::HMget => {
             let (i, key) = string(i)?;
-            let (i, fields) = separated_list0(tag("\r\n"), string)(i)?;
+            let (i, fields) = separated_list0(tag("\r\n"), value)(i)?;
             Ok((i, Command::HMget(key, fields)))
         }
         CmdCode::HMSet => {

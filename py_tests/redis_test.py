@@ -1,189 +1,209 @@
-#!/usr/bin/env python3
 """
-Redis core features test script.
-Requires: pip install redis
-Assumes Redis is running on localhost:6379 (default).
+Redis integration tests.
+Requires a running server on localhost:6379.
+Run with: pytest redis_test.py -v
 """
 
+import pytest
 import redis
-import sys
-
-# ── Connection ─────────────────────────────────────────────────────────────────
-
-r = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
-
-try:
-    r.ping()
-    print("✓ Connected to Redis\n")
-except redis.ConnectionError:
-    print("✗ Could not connect to Redis. Is it running?")
-    sys.exit(1)
-
-# Clean slate for repeatable runs
-r.flushdb()
-
-def section(title):
-    print(f"── {title} {'─' * (50 - len(title))}")
-
-def ok(label, value=None):
-    suffix = f" → {value}" if value is not None else ""
-    print(f"  ✓ {label}{suffix}")
-
-def fail(label, e):
-    print(f"  ✗ {label}: {e}")
 
 
-# ── Strings: SET / GET / INCR / EXPIRE ────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def r():
+    client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+    client.ping()
+    client.flushdb()
+    return client
 
-section("Strings")
 
-r.set("user:1:name", "Alice")
-ok("SET user:1:name", r.get("user:1:name"))
+# ── Strings ───────────────────────────────────────────────────────────────────
 
-r.set("counter", 0)
-r.incr("counter")
-r.incr("counter")
-r.incrby("counter", 8)
-ok("INCR / INCRBY counter", r.get("counter"))           # → 10
+class TestStrings:
+    def test_set_and_get(self, r):
+        r.set("key", "Alice")
+        assert r.get("key") == "Alice"
 
-r.set("temp_key", "bye", ex=5)                          # expires in 5 seconds
-ok("SET with EX (TTL)", f"{r.ttl('temp_key')}s remaining")
+    def test_get_missing_key(self, r):
+        assert r.get("missing") is None
 
-r.set("nx_key", "first", nx=True)                       # only set if not exists
-r.set("nx_key", "second", nx=True)                      # this is ignored
-ok("SET NX (only if not exists)", r.get("nx_key"))      # → first
+    def test_incr(self, r):
+        r.set("counter", 0)
+        r.incr("counter")
+        r.incr("counter")
+        assert r.get("counter") == "2"
 
-print()
+    def test_incrby(self, r):
+        r.set("counter", 2)
+        r.incrby("counter", 8)
+        assert r.get("counter") == "10"
 
-# ── Lists: LPUSH / RPUSH / LRANGE / LPOP / RPOP ──────────────────────────────
+    def test_set_with_ex(self, r):
+        r.set("temp", "bye", ex=5)
+        assert r.ttl("temp") > 0
 
-section("Lists")
+    def test_set_nx(self, r):
+        r.set("nx", "first", nx=True)
+        r.set("nx", "second", nx=True)
+        assert r.get("nx") == "first"
 
-r.rpush("queue", "job1", "job2", "job3")
-ok("RPUSH queue", r.lrange("queue", 0, -1))
 
-r.lpush("queue", "job0")
-ok("LPUSH queue (prepend)", r.lrange("queue", 0, -1))
+# ── Lists ─────────────────────────────────────────────────────────────────────
 
-ok("LPOP (dequeue from front)", r.lpop("queue"))
-ok("RPOP (dequeue from back)", r.rpop("queue"))
-ok("LRANGE after pops", r.lrange("queue", 0, -1))
-ok("LLEN", r.llen("queue"))
+class TestLists:
+    def test_rpush_and_lrange(self, r):
+        r.rpush("q", "a", "b", "c")
+        assert r.lrange("q", 0, -1) == ["a", "b", "c"]
 
-print()
+    def test_lpush(self, r):
+        r.rpush("q", "a", "b")
+        r.lpush("q", "z")
+        assert r.lrange("q", 0, -1) == ["z", "a", "b"]
 
-# ── Hashes: HSET / HGET / HMGET / HGETALL / HINCRBY ─────────────────────────
+    def test_lpop(self, r):
+        r.rpush("q", "a", "b", "c")
+        assert r.lpop("q") == "a"
+        assert r.lrange("q", 0, -1) == ["b", "c"]
 
-section("Hashes")
+    def test_rpop(self, r):
+        r.rpush("q", "a", "b", "c")
+        assert r.rpop("q") == "c"
+        assert r.lrange("q", 0, -1) == ["a", "b"]
 
-r.hset("user:1", mapping={
-    "name":  "Alice",
-    "email": "alice@example.com",
-    "age":   "30",
-    "score": "100",
-})
-ok("HSET user:1 (mapping)")
-ok("HGET user:1 name",      r.hget("user:1", "name"))
-ok("HMGET name+email",      r.hmget("user:1", "name", "email"))
-ok("HGETALL",               r.hgetall("user:1"))
-r.hincrby("user:1", "score", 50)
-ok("HINCRBY score +50",     r.hget("user:1", "score"))
-ok("HEXISTS age",           r.hexists("user:1", "age"))
-ok("HKEYS",                 r.hkeys("user:1"))
+    def test_llen(self, r):
+        r.rpush("q", "a", "b", "c")
+        assert r.llen("q") == 3
 
-print()
 
-# ── Sets: SADD / SMEMBERS / SISMEMBER / SINTER / SUNION / SDIFF ──────────────
+# ── Hashes ────────────────────────────────────────────────────────────────────
 
-section("Sets")
+class TestHashes:
+    def test_hset_and_hget(self, r):
+        r.hset("h", "name", "Alice")
+        assert r.hget("h", "name") == "Alice"
 
-r.sadd("team:alpha", "Alice", "Bob", "Carol")
-r.sadd("team:beta",  "Bob",   "Dave", "Eve")
-ok("SADD team:alpha",   r.smembers("team:alpha"))
-ok("SADD team:beta",    r.smembers("team:beta"))
-ok("SISMEMBER Alice",   r.sismember("team:alpha", "Alice"))
-ok("SISMEMBER Dave",    r.sismember("team:alpha", "Dave"))
-ok("SINTER (overlap)",  r.sinter("team:alpha", "team:beta"))
-ok("SUNION (all)",      r.sunion("team:alpha", "team:beta"))
-ok("SDIFF alpha-beta",  r.sdiff("team:alpha", "team:beta"))
-ok("SCARD team:alpha",  r.scard("team:alpha"))
+    def test_hset_mapping_and_hgetall(self, r):
+        r.hset("h", mapping={"name": "Alice", "email": "a@b.com", "age": "30"})
+        assert r.hgetall("h") == {"name": "Alice", "email": "a@b.com", "age": "30"}
 
-print()
+    def test_hmget(self, r):
+        r.hset("h", mapping={"a": "1", "b": "2", "c": "3"})
+        assert r.hmget("h", "a", "c") == ["1", "3"]
 
-# ── Sorted Sets: ZADD / ZRANGE / ZRANK / ZSCORE / ZRANGEBYSCORE ──────────────
+    def test_hincrby(self, r):
+        r.hset("h", "score", "100")
+        r.hincrby("h", "score", 50)
+        assert r.hget("h", "score") == "150"
 
-section("Sorted Sets")
+    def test_hincrby_missing_field(self, r):
+        r.hset("h", "other", "x")
+        r.hincrby("h", "score", 10)
+        assert r.hget("h", "score") == "10"
 
-r.zadd("leaderboard", {"Alice": 900, "Bob": 750, "Carol": 870, "Dave": 600})
-ok("ZADD leaderboard")
-ok("ZRANGE (low→high)",        r.zrange("leaderboard", 0, -1, withscores=True))
-ok("ZREVRANGE (high→low)",     r.zrange("leaderboard", 0, -1, withscores=True, rev=True))
-ok("ZRANK Alice",              r.zrank("leaderboard", "Alice"))
-ok("ZREVRANK Alice",           r.zrevrank("leaderboard", "Alice"))
-ok("ZSCORE Carol",             r.zscore("leaderboard", "Carol"))
-ok("ZRANGEBYSCORE 700-900",    r.zrangebyscore("leaderboard", 700, 900, withscores=True))
-r.zincrby("leaderboard", 200, "Dave")
-ok("ZINCRBY Dave +200",        r.zscore("leaderboard", "Dave"))
+    def test_hexists(self, r):
+        r.hset("h", "name", "Alice")
+        assert r.hexists("h", "name") is True
+        assert r.hexists("h", "missing") is False
 
-print()
+    def test_hkeys(self, r):
+        r.hset("h", mapping={"a": "1", "b": "2", "c": "3"})
+        assert set(r.hkeys("h")) == {"a", "b", "c"}
 
-# ── Key utilities: EXISTS / TYPE / RENAME / SCAN ─────────────────────────────
 
-section("Key Utilities")
+# ── Sets ──────────────────────────────────────────────────────────────────────
 
-ok("EXISTS user:1",            r.exists("user:1"))
-ok("EXISTS ghost",             r.exists("ghost"))
-ok("TYPE user:1",              r.type("user:1"))
-ok("TYPE queue",               r.type("queue"))
-ok("TYPE leaderboard",         r.type("leaderboard"))
+class TestSets:
+    def test_sadd_and_smembers(self, r):
+        r.sadd("s", "Alice", "Bob", "Carol")
+        assert r.smembers("s") == {"Alice", "Bob", "Carol"}
 
-r.set("old_key", "value")
-r.rename("old_key", "new_key")
-ok("RENAME old_key → new_key", r.get("new_key"))
+    def test_sismember(self, r):
+        r.sadd("s", "Alice", "Bob")
+        assert r.sismember("s", "Alice") is True
+        assert r.sismember("s", "Dave") is False
 
-cursor, keys = r.scan(0, match="user:*", count=100)
-ok("SCAN user:*",              keys)
+    def test_sinter(self, r):
+        r.sadd("a", "Alice", "Bob", "Carol")
+        r.sadd("b", "Bob", "Dave")
+        assert r.sinter("a", "b") == {"Bob"}
 
-print()
+    def test_sunion(self, r):
+        r.sadd("a", "Alice", "Bob")
+        r.sadd("b", "Bob", "Carol")
+        assert r.sunion("a", "b") == {"Alice", "Bob", "Carol"}
 
-# ── Pub/Sub (quick fire-and-forget demo) ──────────────────────────────────────
+    def test_sdiff(self, r):
+        r.sadd("a", "Alice", "Bob", "Carol")
+        r.sadd("b", "Bob", "Dave")
+        assert r.sdiff("a", "b") == {"Alice", "Carol"}
 
-section("Pub/Sub")
+    def test_scard(self, r):
+        r.sadd("s", "Alice", "Bob", "Carol")
+        assert r.scard("s") == 3
 
-import threading, time
 
-messages = []
+# ── Sorted Sets ───────────────────────────────────────────────────────────────
 
-def subscriber():
-    sub = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
-    p = sub.pubsub()
-    p.subscribe("news")
-    for msg in p.listen():
-        if msg["type"] == "message":
-            messages.append(msg["data"])
-            break  # exit after first message
+class TestSortedSets:
+    def test_zadd_and_zrange(self, r):
+        r.zadd("z", {"Alice": 900, "Bob": 750, "Carol": 870, "Dave": 600})
+        assert r.zrange("z", 0, -1, withscores=True) == [
+            ("Dave", 600.0), ("Bob", 750.0), ("Carol", 870.0), ("Alice", 900.0),
+        ]
 
-t = threading.Thread(target=subscriber, daemon=True)
-t.start()
-time.sleep(0.1)                        # give subscriber a moment to connect
+    def test_zrange_without_scores(self, r):
+        r.zadd("z", {"Alice": 900, "Bob": 750, "Carol": 870})
+        assert r.zrange("z", 0, -1) == ["Bob", "Carol", "Alice"]
 
-r.publish("news", "hello from publisher")
-t.join(timeout=2)
-ok("PUBLISH / SUBSCRIBE", messages)
+    def test_zrevrange(self, r):
+        r.zadd("z", {"Alice": 900, "Bob": 750, "Carol": 870})
+        assert r.zrange("z", 0, -1, withscores=True, rev=True) == [
+            ("Alice", 900.0), ("Carol", 870.0), ("Bob", 750.0),
+        ]
 
-print()
+    def test_zrank(self, r):
+        r.zadd("z", {"Alice": 900, "Bob": 750, "Dave": 600})
+        assert r.zrank("z", "Dave") == 0
+        assert r.zrank("z", "Alice") == 2
 
-# ── Pipeline (batched commands) ───────────────────────────────────────────────
+    def test_zrevrank(self, r):
+        r.zadd("z", {"Alice": 900, "Bob": 750, "Dave": 600})
+        assert r.zrevrank("z", "Alice") == 0
+        assert r.zrevrank("z", "Dave") == 2
 
-section("Pipeline")
+    def test_zscore(self, r):
+        r.zadd("z", {"Alice": 900, "Carol": 870})
+        assert r.zscore("z", "Carol") == 870.0
+        assert r.zscore("z", "missing") is None
 
-pipe = r.pipeline()
-pipe.set("p:a", 1)
-pipe.set("p:b", 2)
-pipe.set("p:c", 3)
-pipe.mget("p:a", "p:b", "p:c")
-results = pipe.execute()
-ok("Pipeline SET×3 + MGET", results[-1])   # last result is the MGET
+    def test_zrangebyscore(self, r):
+        r.zadd("z", {"Alice": 900, "Bob": 750, "Carol": 870, "Dave": 600})
+        assert r.zrangebyscore("z", 700, 900, withscores=True) == [
+            ("Bob", 750.0), ("Carol", 870.0), ("Alice", 900.0),
+        ]
 
-print()
-print("All tests passed ✓")
+    def test_zincrby(self, r):
+        r.zadd("z", {"Dave": 600})
+        r.zincrby("z", 200, "Dave")
+        assert r.zscore("z", "Dave") == 800.0
+
+    def test_zadd_updates_existing(self, r):
+        r.zadd("z", {"Alice": 100})
+        r.zadd("z", {"Alice": 200})
+        assert r.zscore("z", "Alice") == 200.0
+        assert r.zcard("z") == 1
+
+
+# ── Key Utilities ─────────────────────────────────────────────────────────────
+
+class TestKeyUtilities:
+    def test_exists(self, r):
+        r.set("key", "value")
+        assert r.exists("key") == 1
+        assert r.exists("ghost") == 0
+
+    def test_del(self, r):
+        r.set("a", "1")
+        r.set("b", "2")
+        r.delete("a", "b")
+        assert r.get("a") is None
+        assert r.get("b") is None

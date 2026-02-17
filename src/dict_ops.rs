@@ -48,8 +48,9 @@ impl HMapDictOps for HashMap<Bytes, StoredValue> {
         match self.get(key) {
             None => Ok(None),
             Some(StoredValue::Dict(dict)) => {
-                let values = fields.iter().filter_map(|f| dict.get(*f)).collect();
-                Ok(Some((values, dict.keys().len())))
+                let values: Vec<&Bytes> = fields.iter().filter_map(|f| dict.get(*f)).collect();
+                let len = values.len();
+                Ok(Some((values, len)))
             }
             _ => bail!("stored value isn't a dict"),
         }

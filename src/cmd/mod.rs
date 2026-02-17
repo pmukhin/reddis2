@@ -36,7 +36,6 @@ pub enum Command<'a> {
     Ttl(&'a [u8]),
     LLen(&'a [u8]),
     Hget(&'a [u8], &'a [u8]),
-    Hset(&'a [u8], &'a [u8], &'a [u8]),
     HMget(&'a [u8], Vec<&'a [u8]>),
     HMset(&'a [u8], Vec<&'a [u8]>),
     HgetAll(&'a [u8]),

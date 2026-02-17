@@ -16,7 +16,7 @@ pub trait HMapOps<K, V> {
         maybe_end_of_life: Option<Instant>,
     ) -> Option<StoredValue>;
 
-    fn delete_all<'a>(&'a mut self, keys: impl Iterator<Item = &'a [u8]>);
+    fn delete_all<'a>(&'a mut self, keys: impl Iterator<Item = &'a [u8]>) -> usize;
 
     fn get_ttl(&self, key: &[u8]) -> anyhow::Result<Option<Duration>>;
 }
@@ -50,10 +50,14 @@ impl HMapOps<Bytes, StoredValue> for HashMap<Bytes, StoredValue> {
         )
     }
 
-    fn delete_all<'a>(&'a mut self, keys: impl Iterator<Item = &'a [u8]>) {
+    fn delete_all<'a>(&'a mut self, keys: impl Iterator<Item = &'a [u8]>) -> usize {
+        let mut count = 0;
         for key in keys {
-            self.remove(key);
+            if self.remove(key).is_some() {
+                count += 1;
+            }
         }
+        count
     }
 
     fn get_ttl(&self, key: &[u8]) -> anyhow::Result<Option<Duration>> {

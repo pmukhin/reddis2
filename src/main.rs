@@ -200,15 +200,11 @@ fn main() -> anyhow::Result<()> {
                                 }
                                 Command::Lpush(key, values) => match hmap.append(key, values) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(values_len) => {
-                                        client.ops.write_bulk_string(values_len.to_string())?
-                                    }
+                                    Ok(values_len) => client.ops.write_integer(values_len)?,
                                 },
                                 Command::Rpush(key, values) => match hmap.prepend(key, values) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(values_len) => {
-                                        client.ops.write_bulk_string(values_len.to_string())?
-                                    }
+                                    Ok(values_len) => client.ops.write_integer(values_len)?,
                                 },
                                 Command::LpushX(_, _) => {
                                     println!("Command::LpushX")
@@ -241,18 +237,23 @@ fn main() -> anyhow::Result<()> {
                                     }
                                 }
                                 Command::Del(keys) => {
-                                    hmap.delete_all(keys.into_iter());
-                                    client.ops.ok()?;
+                                    let count = hmap.delete_all(keys.into_iter());
+                                    client.ops.write_integer(count)?;
                                 }
                                 Command::Incr(key) => match hmap.incr_by(key, 1) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(value)) => client.ops.write_bulk_string(value)?,
+                                    Ok(Some(value)) => {
+                                        client.ops.write_integer(String::from_utf8_lossy(&value))?
+                                    }
                                 },
-                                Command::IncrBy(key, incr_by) => match hmap.incr_by(key, incr_by) {
+                                Command::IncrBy(key, incr_by) => match hmap.incr_by(key, incr_by)
+                                {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(value)) => client.ops.write_bulk_string(value)?,
+                                    Ok(Some(value)) => {
+                                        client.ops.write_integer(String::from_utf8_lossy(&value))?
+                                    }
                                 },
                                 Command::ClientSetInfo(_) => {
                                     client.ops.ok()?;
@@ -261,7 +262,7 @@ fn main() -> anyhow::Result<()> {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(None) => client.ops.key_not_found()?,
                                     Ok(Some(value)) => {
-                                        client.ops.write_bulk_string(value.as_secs().to_string())?
+                                        client.ops.write_integer(value.as_secs())?
                                     }
                                 },
                                 Command::Lrange(key, start, end) => match hmap.get(key) {
@@ -281,7 +282,7 @@ fn main() -> anyhow::Result<()> {
                                 Command::LLen(key) => match hmap.get(key) {
                                     None => client.ops.key_not_found()?,
                                     Some(StoredValue::List(ll)) => {
-                                        client.ops.write_bulk_string(ll.len().to_string())?;
+                                        client.ops.write_integer(ll.len())?;
                                     }
                                     _ => client.ops.wrong_type("stored value isn't a list")?,
                                 },
@@ -290,12 +291,6 @@ fn main() -> anyhow::Result<()> {
                                     Ok(None) => client.ops.key_not_found()?,
                                     Ok(Some(value)) => client.ops.write_bulk_string(value)?,
                                 },
-                                Command::Hset(key, field, value) => {
-                                    match hmap.dict_set(key, field, value) {
-                                        Err(e) => client.ops.wrong_type(e.to_string())?,
-                                        Ok(()) => client.ops.ok()?,
-                                    }
-                                }
                                 Command::HMget(key, fields) => match hmap.dict_mget(key, &fields) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(None) => client.ops.key_not_found()?,
@@ -319,19 +314,21 @@ fn main() -> anyhow::Result<()> {
                                 Command::HincrBy(key, field, incr_by) => {
                                     match hmap.dict_incr_by(key, field, incr_by) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
-                                        Ok(value) => client.ops.write_bulk_string(value)?,
+                                        Ok(value) => {
+                                            client.ops.write_integer(String::from_utf8_lossy(&value))?
+                                        }
                                     }
                                 }
                                 Command::Exists(key) => {
                                     let exists = if hmap.contains_key(key) { 1 } else { 0 };
-                                    client.ops.write_bulk_string(exists.to_string())?;
+                                    client.ops.write_integer(exists)?;
                                 }
                                 Command::Hexists(key, field) => {
                                     match hmap.dict_exists(key, field) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(exists) => {
                                             let v = if exists { 1 } else { 0 };
-                                            client.ops.write_bulk_string(v.to_string())?;
+                                            client.ops.write_integer(v)?;
                                         }
                                     }
                                 }
@@ -344,14 +341,14 @@ fn main() -> anyhow::Result<()> {
                                 },
                                 Command::Sadd(key, members) => match hmap.set_add(key, members) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(added) => client.ops.write_bulk_string(added.to_string())?,
+                                    Ok(added) => client.ops.write_integer(added)?,
                                 },
                                 Command::Sismember(key, member) => {
                                     match hmap.set_is_member(key, member) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(exists) => {
                                             let v = if exists { 1 } else { 0 };
-                                            client.ops.write_bulk_string(v.to_string())?;
+                                            client.ops.write_integer(v)?;
                                         }
                                     }
                                 }
@@ -376,9 +373,7 @@ fn main() -> anyhow::Result<()> {
                                 Command::Scard(key) => match hmap.set_card(key) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(len)) => {
-                                        client.ops.write_bulk_string(len.to_string())?
-                                    }
+                                    Ok(Some(len)) => client.ops.write_integer(len)?,
                                 },
                                 Command::Smembers(key) => match hmap.set_members(key) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
@@ -389,7 +384,7 @@ fn main() -> anyhow::Result<()> {
                                 },
                                 Command::Zadd(key, members) => match hmap.zset_add(key, &members) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
-                                    Ok(added) => client.ops.write_bulk_string(added.to_string())?,
+                                    Ok(added) => client.ops.write_integer(added)?,
                                 },
                                 Command::Zrange(key, start, stop, withscores) => {
                                     match hmap.zset_range(key, start, stop, withscores) {
@@ -412,17 +407,13 @@ fn main() -> anyhow::Result<()> {
                                 Command::Zrank(key, member) => match hmap.zset_rank(key, member) {
                                     Err(e) => client.ops.wrong_type(e.to_string())?,
                                     Ok(None) => client.ops.key_not_found()?,
-                                    Ok(Some(rank)) => {
-                                        client.ops.write_bulk_string(rank.to_string())?
-                                    }
+                                    Ok(Some(rank)) => client.ops.write_integer(rank)?,
                                 },
                                 Command::Zrevrank(key, member) => {
                                     match hmap.zset_revrank(key, member) {
                                         Err(e) => client.ops.wrong_type(e.to_string())?,
                                         Ok(None) => client.ops.key_not_found()?,
-                                        Ok(Some(rank)) => {
-                                            client.ops.write_bulk_string(rank.to_string())?
-                                        }
+                                        Ok(Some(rank)) => client.ops.write_integer(rank)?,
                                     }
                                 }
                                 Command::Zscore(key, member) => {
